@@ -3,7 +3,7 @@ import type { CurrentWeather, DailyForecast, GeoLocation, HourlyForecast } from 
 import { MODEL_IDS } from './weatherModels';
 
 const cache = new Map<string, { data: unknown; ts: number }>();
-const CACHE_MS = 10 * 60 * 1000;
+const CACHE_MS = 30 * 60 * 1000;
 
 function getCached<T>(key: string): T | null {
   const c = cache.get(key);
