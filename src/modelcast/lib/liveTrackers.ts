@@ -1,4 +1,4 @@
-import { supabaseUrl } from '@/modelcast/lib/supabase';
+import { callFunction } from '@/modelcast/lib/supabase';
 
 export interface Earthquake {
   id: string;
@@ -52,7 +52,6 @@ export interface TropicalStorm {
 const USGS_URL = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 const MET_ALERTS_URL = 'https://api.met.no/weatherapi/metalerts/2.0/current.json';
-const SUPABASE_FUNCTIONS_URL = `${supabaseUrl}/functions/v1`;
 
 interface GeoJsonFeature {
   id: string | number;
@@ -174,11 +173,7 @@ export async function fetchWeatherAlerts(
 }
 
 export async function fetchTropicalStorms(): Promise<TropicalStorm[]> {
-  const functionUrl = `${SUPABASE_FUNCTIONS_URL}/hurricane-tracker`;
-
-  const res = await fetch(functionUrl);
-  if (!res.ok) throw new Error(`Hurricane tracker error: ${res.status}`);
-  const data = await res.json();
+  const data = await callFunction<{ storms?: TropicalStorm[] }>('hurricane-tracker');
   return data.storms ?? [];
 }
 
