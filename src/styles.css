@@ -142,3 +142,14 @@
     color: var(--color-foreground);
   }
 }
+
+input, textarea, select {
+  border-radius: 0.75rem;
+  border: 1px solid rgb(51 65 85 / 0.8);
+  background: rgb(15 23 42 / 0.8);
+  padding: 0.7rem 0.8rem;
+  color: rgb(241 245 249);
+  outline: none;
+}
+input:focus, textarea:focus, select:focus { border-color: rgb(56 189 248); }
+input::placeholder, textarea::placeholder { color: rgb(100 116 139); }
