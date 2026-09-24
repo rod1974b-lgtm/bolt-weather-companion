@@ -5,8 +5,8 @@ const FALLBACK_URL = 'https://elhkveswxaqplaptwrli.supabase.co';
 const FALLBACK_ANON =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsaGt2ZXN3eGFxcGxhcHR3cmxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMDU3NzcsImV4cCI6MjEwNTY4MTc3N30.70ZvqsKR8XPuZtChGJDr4tMV2cbsr8wSriJLBeJAdlU';
 
-export const supabaseUrl: string = import.meta.env.VITE_SUPABASE_URL || FALLBACK_URL;
-export const supabaseAnonKey: string = import.meta.env.VITE_SUPABASE_ANON_KEY || FALLBACK_ANON;
+export const supabaseUrl: string = import.meta.env['VITE_SUPABASE_URL'] || FALLBACK_URL;
+export const supabaseAnonKey: string = import.meta.env['VITE_SUPABASE_ANON_KEY'] || FALLBACK_ANON;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: typeof window !== 'undefined' },

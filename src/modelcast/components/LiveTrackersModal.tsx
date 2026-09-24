@@ -27,6 +27,16 @@ interface WeatherAlertData {
   source?: string;
 }
 
+function ProxyErrorBanner({ message, mapUrl, mapLabel }: { message: string; mapUrl: string; mapLabel: string }) {
+  return (
+    <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 flex flex-wrap items-start gap-3">
+      <AlertTriangle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+      <p className="flex-1 min-w-[180px] text-xs text-red-200 font-medium break-words">{message}</p>
+      <a href={mapUrl} target="_blank" rel="noreferrer" className="shrink-0 px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">{mapLabel} <ExternalLink size={10} /></a>
+    </div>
+  );
+}
+
 function formatAlertTime(iso: string): string {
   if (!iso) return 'Unknown';
   try {
@@ -104,14 +114,7 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
       </div>
 
       {error && alerts.length === 0 && (
-        <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
-          <div className="flex items-center gap-2 text-amber-300 text-sm mb-1">
-            <Info size={16} />
-            <span className="font-medium">Alerts temporarily unavailable</span>
-          </div>
-          <p className="text-xs text-slate-400">{error}</p>
-          <p className="text-xs text-slate-500 mt-2">Alerts are generated from live forecast data and official meteorological sources when available.</p>
-        </div>
+        <ProxyErrorBanner message={error} mapUrl={`https://www.windy.com/?${lat},${lon},6`} mapLabel="Open Alerts Map" />
       )}
 
       {alerts.length === 0 && !error && (
@@ -249,19 +252,19 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
         let minDiff = Infinity;
         let nowIdx = -1;
         for (let i = 0; i < allHours.length; i++) {
-          const diff = Math.abs(new Date(allHours[i].time).getTime() - now);
+          const diff = Math.abs(new Date(allHours[i]!.time).getTime() - now);
           if (diff < minDiff) {
             minDiff = diff;
             nowIdx = i;
           }
         }
-        if (nowIdx >= 0) allHours[nowIdx].isNow = true;
+        if (nowIdx >= 0) allHours[nowIdx]!.isNow = true;
 
         if (allHours.length === 0) throw new Error('No precipitation data available for this location');
         setHours(allHours);
         if (nowIdx >= 0) {
-          setCurrentPrecip(allHours[nowIdx].precip);
-          setCurrentProb(allHours[nowIdx].prob);
+          setCurrentPrecip(allHours[nowIdx]!.precip);
+          setCurrentProb(allHours[nowIdx]!.prob);
         }
         setLastUpdated(new Date());
       } catch (err) {
@@ -306,13 +309,13 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
 
   const dayGroups: { dateKey: string; label: string; startIdx: number; endIdx: number }[] = [];
   for (let i = 0; i < hours.length; i++) {
-    const d = new Date(hours[i].time);
+    const d = new Date(hours[i]!.time);
     const label = d.toLocaleDateString('en', { weekday: 'short', day: 'numeric' });
     const last = dayGroups[dayGroups.length - 1];
-    if (last && last.dateKey === hours[i].dateKey) {
+    if (last && last.dateKey === hours[i]!.dateKey) {
       last.endIdx = i;
     } else {
-      dayGroups.push({ dateKey: hours[i].dateKey, label, startIdx: i, endIdx: i });
+      dayGroups.push({ dateKey: hours[i]!.dateKey, label, startIdx: i, endIdx: i });
     }
   }
 
@@ -500,7 +503,7 @@ function SatelliteTracker() {
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video min-h-[480px] border border-slate-700 flex items-center justify-center">
         {!imageLoaded && !imageError && <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10 bg-slate-900"><Loader2 size={32} className="animate-spin mb-3 text-sky-400" /><span className="text-sm">Loading live satellite image...</span></div>}
         {imageError ? (
-          <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8"><Satellite size={40} className="mb-3 text-sky-400" /><p className="text-sm font-medium">Satellite image temporarily unavailable</p><p className="text-xs text-slate-500 mt-2">Open the live map to view current imagery.</p></div>
+          <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8"><Satellite size={40} className="mb-3 text-sky-400" /><p className="text-sm font-medium">Satellite image temporarily unavailable</p><p className="text-xs text-slate-500 mt-2">Image failed to load.</p><a href={current.mapUrl} target="_blank" rel="noreferrer" className="mt-3 px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Satellite Map <ExternalLink size={10} /></a></div>
         ) : (
           <img key={imageUrl} src={imageUrl} alt={`${current.name} live satellite`} className={`w-full h-full min-h-[480px] object-contain bg-black transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setImageLoaded(true)} onError={() => setImageError(true)} />
         )}
@@ -610,10 +613,7 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
             )}
 
             {error && !loading && (
-              <div className="flex items-center gap-2 text-amber-300 text-sm py-6 px-2">
-                <Info size={16} />
-                <span>Storm data unavailable ({error}). NHC outlook images above still work.</span>
-              </div>
+              <ProxyErrorBanner message={`${error} — NHC outlook images above still work.`} mapUrl={`https://zoom.earth/storms/`} mapLabel="Open Storm Map" />
             )}
 
             {!loading && !error && storms.length === 0 && (
@@ -723,7 +723,7 @@ function getRegionBounds(r: LightningRegion, locLat: number, locLon: number): Re
       label: 'Nearby',
     };
   }
-  return REGIONS.find(reg => reg.id === r)?.bounds ?? REGIONS[4].bounds;
+  return REGIONS.find(reg => reg.id === r)?.bounds ?? REGIONS[4]!.bounds;
 }
 
 const CANVAS_SIZE = 900;
@@ -910,7 +910,7 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
       ctx.fillStyle = 'rgba(30,55,90,0.55)';
       ctx.strokeStyle = 'rgba(56,89,138,0.5)';
       ctx.lineWidth = 1;
-      for (const [cLonMin, cLatMax, cLonMax, cLatMin] of continents) {
+      for (const [cLonMin = 0, cLatMax = 0, cLonMax = 0, cLatMin = 0] of continents) {
         const x1 = projectX(cLonMin);
         const y1 = projectY(cLatMax);
         const x2 = projectX(cLonMax);
@@ -1119,7 +1119,8 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
       </div>
 
       {/* Error message */}
-      {error && (
+      {error && <ProxyErrorBanner message={error} mapUrl="https://www.lightningmaps.org/" mapLabel="Open Lightning Maps" />}
+      {false && (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 flex items-start gap-2">
           <AlertTriangle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
           <div>
