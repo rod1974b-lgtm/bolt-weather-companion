@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Star, ThumbsUp, Loader2, Check } from 'lucide-react';
-import type { GeoLocation, VoteAggregate } from '@/lib/types';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { supabase } from '@/lib/supabase';
-import { useSettings } from '@/lib/settings';
+import type { GeoLocation, VoteAggregate } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { supabase } from '@/modelcast/lib/supabase';
+import { useSettings } from '@/modelcast/lib/settings';
 
 interface VotingPanelProps {
   location: GeoLocation;

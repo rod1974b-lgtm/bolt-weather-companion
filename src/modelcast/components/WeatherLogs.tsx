@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
-import type { GeoLocation, CurrentWeather } from '@/lib/types';
+import { supabase } from '@/modelcast/lib/supabase';
+import type { GeoLocation, CurrentWeather } from '@/modelcast/lib/types';
 
 type WeatherChange = { time: string; condition: string; severity: string };
 

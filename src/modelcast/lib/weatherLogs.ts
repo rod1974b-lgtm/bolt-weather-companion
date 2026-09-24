@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/modelcast/lib/supabase';
 
 export type WeatherLogType =
   | 'Dry'

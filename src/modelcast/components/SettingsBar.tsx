@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Globe, ChevronDown, Thermometer } from 'lucide-react';
-import { useSettings } from '@/lib/settings';
-import { LANGUAGES, type Language } from '@/lib/translations';
+import { useSettings } from '@/modelcast/lib/settings';
+import { LANGUAGES, type Language } from '@/modelcast/lib/translations';
 
 export function SettingsBar() {
   const { language, setLanguage, units, setUnits, t } = useSettings();

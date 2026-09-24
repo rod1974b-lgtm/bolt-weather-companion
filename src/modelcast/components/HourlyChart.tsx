@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import type { HourlyForecast } from '@/lib/types';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { formatHour, round } from '@/lib/utils';
-import { useSettings } from '@/lib/settings';
-import { tempUnitLabel, windUnitLabel, precipUnitLabel } from '@/lib/units';
+import type { HourlyForecast } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { formatHour, round } from '@/modelcast/lib/utils';
+import { useSettings } from '@/modelcast/lib/settings';
+import { tempUnitLabel, windUnitLabel, precipUnitLabel } from '@/modelcast/lib/units';
 
 interface HourlyChartProps {
   data: HourlyForecast;

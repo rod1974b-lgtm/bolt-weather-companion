@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import type { GeoLocation, HourlyForecast } from '@/lib/types';
-import { supabaseUrl } from '@/lib/supabase';
-import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/lib/liveTrackers';
-import type { TropicalStorm } from '@/lib/liveTrackers';
+import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
+import { supabaseUrl } from '@/modelcast/lib/supabase';
+import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/modelcast/lib/liveTrackers';
+import type { TropicalStorm } from '@/modelcast/lib/liveTrackers';
 import { X, Satellite, Wind, Zap, ExternalLink, Loader2, AlertTriangle, Clock, CheckCircle2, Info } from 'lucide-react';
 
 type TabId = 'precip' | 'warnings' | 'satellite' | 'earthquake' | 'hurricane' | 'lightning';

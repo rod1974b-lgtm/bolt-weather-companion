@@ -1,4 +1,4 @@
-import { supabaseUrl } from '@/lib/supabase';
+import { supabaseUrl } from '@/modelcast/lib/supabase';
 
 export interface Earthquake {
   id: string;

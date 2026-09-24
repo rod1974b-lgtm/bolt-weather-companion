@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { GeoLocation } from '@/lib/types';
+import type { GeoLocation } from '@/modelcast/lib/types';
 
 const STORAGE_KEY = 'modelcast:favorites';
 

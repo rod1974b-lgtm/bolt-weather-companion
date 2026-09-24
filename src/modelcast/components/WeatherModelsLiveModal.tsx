@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { BarChart3, FlaskConical, Search, Star, Trophy, X } from 'lucide-react';
-import type { GeoLocation, ModelAccuracy, VoteAggregate } from '@/lib/types';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { VotingPanel } from '@/components/VotingPanel';
+import type { GeoLocation, ModelAccuracy, VoteAggregate } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { VotingPanel } from '@/modelcast/components/VotingPanel';
 
 interface WeatherModelsLiveModalProps {
   open: boolean;

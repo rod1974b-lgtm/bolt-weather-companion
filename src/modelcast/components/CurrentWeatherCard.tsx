@@ -15,16 +15,16 @@ import {
   Thermometer,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { CurrentWeather } from '@/lib/types';
-import { getWeatherCodeInfo } from '@/lib/weatherCodes';
-import { useSettings } from '@/lib/settings';
+import type { CurrentWeather } from '@/modelcast/lib/types';
+import { getWeatherCodeInfo } from '@/modelcast/lib/weatherCodes';
+import { useSettings } from '@/modelcast/lib/settings';
 import {
   formatTemp,
   formatTempWithUnit,
   formatWind,
   formatPrecip,
   formatPressure,
-} from '@/lib/units';
+} from '@/modelcast/lib/units';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Sun,

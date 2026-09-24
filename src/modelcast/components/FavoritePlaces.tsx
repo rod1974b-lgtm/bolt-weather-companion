@@ -1,5 +1,5 @@
 import { Star, X, MapPin } from 'lucide-react';
-import type { GeoLocation } from '@/lib/types';
+import type { GeoLocation } from '@/modelcast/lib/types';
 
 interface FavoritePlacesProps {
   favorites: GeoLocation[];

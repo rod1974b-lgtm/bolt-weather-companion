@@ -1,7 +1,7 @@
 import { Trophy, Star, Users } from 'lucide-react';
-import type { VoteAggregate } from '@/lib/types';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { useSettings } from '@/lib/settings';
+import type { VoteAggregate } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { useSettings } from '@/modelcast/lib/settings';
 
 interface LeaderboardProps {
   votes: VoteAggregate[];

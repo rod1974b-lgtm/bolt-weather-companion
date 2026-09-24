@@ -1,6 +1,6 @@
 import { X, Globe, Building2, Ruler } from 'lucide-react';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { useSettings } from '@/lib/settings';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { useSettings } from '@/modelcast/lib/settings';
 
 interface ModelInfoModalProps {
   open: boolean;

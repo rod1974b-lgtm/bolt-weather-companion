@@ -14,12 +14,12 @@ import {
   Wind,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { DailyForecast } from '@/lib/types';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { getWeatherCodeInfo } from '@/lib/weatherCodes';
-import { formatDayName, isToday } from '@/lib/utils';
-import { useSettings } from '@/lib/settings';
-import { formatTemp, formatPrecip, formatWind } from '@/lib/units';
+import type { DailyForecast } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { getWeatherCodeInfo } from '@/modelcast/lib/weatherCodes';
+import { formatDayName, isToday } from '@/modelcast/lib/utils';
+import { useSettings } from '@/modelcast/lib/settings';
+import { formatTemp, formatPrecip, formatWind } from '@/modelcast/lib/units';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Sun,

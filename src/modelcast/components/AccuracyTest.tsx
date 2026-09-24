@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { FlaskConical, Loader2, Award, TrendingDown, TrendingUp, Info } from 'lucide-react';
-import type { ModelAccuracy } from '@/lib/types';
-import type { GeoLocation } from '@/lib/types';
-import { testModelAccuracy } from '@/lib/accuracyApi';
-import { useSettings } from '@/lib/settings';
+import type { ModelAccuracy } from '@/modelcast/lib/types';
+import type { GeoLocation } from '@/modelcast/lib/types';
+import { testModelAccuracy } from '@/modelcast/lib/accuracyApi';
+import { useSettings } from '@/modelcast/lib/settings';
 import {
   tempUnitLabel,
   windUnitLabel,
-} from '@/lib/units';
+} from '@/modelcast/lib/units';
 
 interface AccuracyTestProps {
   location: GeoLocation;

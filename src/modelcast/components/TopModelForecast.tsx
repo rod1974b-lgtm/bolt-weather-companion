@@ -23,16 +23,16 @@ import {
   FlaskConical,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { CurrentWeather, GeoLocation, HourlyForecast, DailyForecast, ModelAccuracy, VoteAggregate, WeatherModel } from '@/lib/types';
-import { getWeatherCodeInfo } from '@/lib/weatherCodes';
-import { useSettings } from '@/lib/settings';
+import type { CurrentWeather, GeoLocation, HourlyForecast, DailyForecast, ModelAccuracy, VoteAggregate, WeatherModel } from '@/modelcast/lib/types';
+import { getWeatherCodeInfo } from '@/modelcast/lib/weatherCodes';
+import { useSettings } from '@/modelcast/lib/settings';
 import {
   formatTemp,
   formatWind,
   formatPrecip,
   tempUnitLabel,
-} from '@/lib/units';
-import { formatHour, formatDayName, isToday, getHourIndex } from '@/lib/utils';
+} from '@/modelcast/lib/units';
+import { formatHour, formatDayName, isToday, getHourIndex } from '@/modelcast/lib/utils';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Sun,

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CloudSun, Loader2, AlertTriangle, Globe2, Radar, Layers, ClipboardList, RefreshCw } from 'lucide-react';
-import { SearchBar } from '@/components/SearchBar';
-import { CurrentWeatherCard } from '@/components/CurrentWeatherCard';
-import { TopModelForecast } from '@/components/TopModelForecast';
-import { WeatherModelsLiveModal } from '@/components/WeatherModelsLiveModal';
-import { LiveTrackersModal } from '@/components/LiveTrackersModal';
-import { WeatherLogs } from '@/components/WeatherLogs';
-import { SettingsBar } from '@/components/SettingsBar';
-import { SettingsProvider, useSettings } from '@/lib/settings';
+import { SearchBar } from '@/modelcast/components/SearchBar';
+import { CurrentWeatherCard } from '@/modelcast/components/CurrentWeatherCard';
+import { TopModelForecast } from '@/modelcast/components/TopModelForecast';
+import { WeatherModelsLiveModal } from '@/modelcast/components/WeatherModelsLiveModal';
+import { LiveTrackersModal } from '@/modelcast/components/LiveTrackersModal';
+import { WeatherLogs } from '@/modelcast/components/WeatherLogs';
+import { SettingsBar } from '@/modelcast/components/SettingsBar';
+import { SettingsProvider, useSettings } from '@/modelcast/lib/settings';
 import type {
   CurrentWeather,
   DailyForecast,
@@ -16,17 +16,17 @@ import type {
   ModelAccuracy,
   VoteAggregate,
   WeatherModel,
-} from '@/lib/types';
+} from '@/modelcast/lib/types';
 import {
   fetchCurrentWeather,
   fetchDailyForecast,
   fetchHourlyForecast,
-} from '@/lib/weatherApi';
-import { supabase } from '@/lib/supabase';
-import { WEATHER_MODELS } from '@/lib/weatherModels';
-import { testModelAccuracy } from '@/lib/accuracyApi';
-import { useFavorites } from '@/lib/useFavorites';
-import { FavoritePlaces } from '@/components/FavoritePlaces';
+} from '@/modelcast/lib/weatherApi';
+import { supabase } from '@/modelcast/lib/supabase';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
+import { testModelAccuracy } from '@/modelcast/lib/accuracyApi';
+import { useFavorites } from '@/modelcast/lib/useFavorites';
+import { FavoritePlaces } from '@/modelcast/components/FavoritePlaces';
 
 const LAST_LOCATION_KEY = 'modelcast:last-location';
 

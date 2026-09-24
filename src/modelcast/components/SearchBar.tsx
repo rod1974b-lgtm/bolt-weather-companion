@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search, MapPin, Loader2, X } from 'lucide-react';
-import type { GeoLocation } from '@/lib/types';
-import { searchLocations } from '@/lib/weatherApi';
-import { useSettings } from '@/lib/settings';
+import type { GeoLocation } from '@/modelcast/lib/types';
+import { searchLocations } from '@/modelcast/lib/weatherApi';
+import { useSettings } from '@/modelcast/lib/settings';
 
 interface SearchBarProps {
   onSelect: (location: GeoLocation) => void;
