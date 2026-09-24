@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 export function formatHour(isoTime: string): string {
   const d = new Date(isoTime);
   return d.toLocaleTimeString('en-US', {

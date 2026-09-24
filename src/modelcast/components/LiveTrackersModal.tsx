@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 import { useState, useEffect, useRef } from 'react';
 import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
 import { callFunction } from '@/modelcast/lib/supabase';

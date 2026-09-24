@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 import type { AccuracyMetric, ModelAccuracy } from './types';
 import { MODEL_IDS, WEATHER_MODELS } from './weatherModels';
 

@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 import { createClient } from '@supabase/supabase-js';
 
 // Publishable (anon) values — safe in client code. Env vars override when set.

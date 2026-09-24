@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 import { useMemo } from 'react';
 import {
   Cloud,

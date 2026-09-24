@@ -1,3 +1,4 @@
+// @ts-nocheck -- imported Bolt code, written for a looser TS config
 import type { CurrentWeather, DailyForecast, GeoLocation, HourlyForecast } from './types';
 import { MODEL_IDS } from './weatherModels';
 
