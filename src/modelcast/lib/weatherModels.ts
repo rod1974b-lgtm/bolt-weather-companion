@@ -174,7 +174,7 @@ export const WEATHER_MODELS: WeatherModel[] = [
   },
 ];
 
-export const MODEL_IDS = WEATHER_MODELS.map((m) => m.id);
+export const MODEL_IDS = ['ecmwf_ifs04','gfs_seamless','icon_seamless','meteofrance_seamless','jma_seamless'];
 
 export function getModelById(id: string): WeatherModel | undefined {
   return WEATHER_MODELS.find((m) => m.id === id);
