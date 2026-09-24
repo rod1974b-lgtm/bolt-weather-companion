@@ -479,7 +479,7 @@ function SatelliteTracker() {
     { id: 'jma', name: 'Japan JMA - Asia', imageUrl: 'https://cdn.star.nesdis.noaa.gov/HIMAWARI9/ABI/FD/GEOCOLOR/latest.jpg', mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite' },
     { id: 'meteosat', name: 'Meteosat - Europe/Africa', imageUrl: 'https://www.ospo.noaa.gov/eumet/eatl/rgb.jpg', mapUrl: 'https://www.ospo.noaa.gov/products/imagery/meteosat.html' },
   ];
-  const current = SATS[active];
+  const current = SATS[active] ?? SATS[0]!;
 
   useEffect(() => {
     setImageLoaded(false);
