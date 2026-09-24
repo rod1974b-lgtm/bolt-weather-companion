@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
-import { supabaseUrl } from '@/modelcast/lib/supabase';
+import { callFunction } from '@/modelcast/lib/supabase';
 import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/modelcast/lib/liveTrackers';
 import type { TropicalStorm } from '@/modelcast/lib/liveTrackers';
 import { X, Satellite, Wind, Zap, ExternalLink, Loader2, AlertTriangle, Clock, CheckCircle2, Info } from 'lucide-react';
@@ -61,9 +61,7 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
     let mounted = true;
     setLoading(true);
     setError(null);
-    const url = `${supabaseUrl}/functions/v1/weather-alerts?lat=${lat}&lon=${lon}`;
-    fetch(url)
-      .then((r) => r.json())
+    callFunction<{ alerts?: WeatherAlertData[]; error?: string }>('weather-alerts', { lat, lon })
       .then((data) => {
         if (!mounted) return;
         if (data.error && (!data.alerts || data.alerts.length === 0)) {
@@ -73,9 +71,9 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
           setAlerts(data.alerts ?? []);
         }
       })
-      .catch(() => {
+      .catch((e: Error) => {
         if (!mounted) return;
-        setError('Failed to fetch weather alerts');
+        setError(e.message);
         setAlerts([]);
       })
       .finally(() => {
@@ -518,17 +516,20 @@ function SatelliteTracker() {
 function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const [quakes, setQuakes] = useState<EarthquakeFeature[]>([]);
   const [loading, setLoading] = useState(true);
+  const [qErr, setQErr] = useState<string | null>(null);
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
   useEffect(() => {
     const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=1000&minmagnitude=2.5&limit=20&orderby=time`;
-    fetch(url).then(r => r.json()).then(d => setQuakes(d.features || [])).finally(() => setLoading(false));
+    setLoading(true); setQErr(null);
+    fetch(url).then(r => { if (!r.ok) throw new Error(`USGS: HTTP ${r.status}`); return r.json(); }).then(d => setQuakes(d.features || [])).catch((e: Error) => { console.error(e.message); setQErr(e.message); }).finally(() => setLoading(false));
   }, [lat, lon]);
   if (loading) return <div className="flex justify-center py-20 text-slate-400"><Loader2 className="animate-spin mr-2" />Loading USGS earthquakes near Ratchaburi...</div>;
   return (
     <div className="space-y-2 max-h-[520px] overflow-y-auto">
       <div className="text-[11px] text-slate-400 mb-2 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500" />USGS live - 1000km around Ratchaburi - M2.5+</div>
-      {quakes.length === 0 && <div className="text-center text-slate-400 text-sm py-10">✓ No earthquakes &gt;2.5 within 1000km recently - Ratchaburi area clear</div>}
+      {qErr && <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200 flex items-center gap-2"><AlertTriangle size={14} />{qErr}</div>}
+      {!qErr && quakes.length === 0 && <div className="text-center text-slate-400 text-sm py-10">✓ No earthquakes &gt;2.5 within 1000km recently - Ratchaburi area clear</div>}
       {quakes.map((f) => (
         <div key={f.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600">
           <div><div className="text-sm text-white font-medium">{f.properties.place}</div><div className="text-xs text-slate-400">M {f.properties.mag} • {new Date(f.properties.time ?? 0).toLocaleString()} • {f.geometry.coordinates[2]}km deep</div></div>
@@ -555,9 +556,9 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
         if (!mounted) return;
         setStorms(data);
       })
-      .catch(() => {
+      .catch((e: Error) => {
         if (!mounted) return;
-        setError('Failed to fetch storm data');
+        setError(e.message);
         setStorms([]);
       })
       .finally(() => {
@@ -611,7 +612,7 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
             {error && !loading && (
               <div className="flex items-center gap-2 text-amber-300 text-sm py-6 px-2">
                 <Info size={16} />
-                <span>Storm data temporarily unavailable. NHC outlook images above still work.</span>
+                <span>Storm data unavailable ({error}). NHC outlook images above still work.</span>
               </div>
             )}
 
@@ -766,13 +767,11 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
           lonMin: String(bounds.lonMin),
           lonMax: String(bounds.lonMax),
         });
-        const response = await fetch(`${supabaseUrl}/functions/v1/lightning-proxy?${params}`);
-        if (!response.ok) throw new Error(`Proxy error: ${response.status}`);
         const payload: {
           strikes?: { lat: number; lon: number; time?: number }[];
           connected?: boolean;
           error?: string;
-        } = await response.json();
+        } = await callFunction('lightning-proxy', Object.fromEntries(params));
         if (!mounted) return;
 
         attempt = 0;
@@ -813,17 +812,17 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
             setCount(strikesRef.current.length);
           }
         }
-      } catch {
+      } catch (e) {
         if (!mounted) return;
         attempt++;
+        setError(e instanceof Error ? e.message : 'Lightning proxy failed');
         connectedRef.current = false;
         setConnected(false);
 
         if (attempt <= 3) {
           setStatus(`Connection failed, retrying (attempt ${attempt})...`);
         } else {
-          setStatus('Lightning service unavailable');
-          setError('Cannot reach the lightning detection server. The Blitzortung network may be temporarily unreachable. Retries will continue automatically.');
+          setStatus('Lightning service unavailable — retrying every 15s');
         }
 
         if (!retryTimer) {
@@ -952,9 +951,9 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
 
       // Location marker with pulsing ring
       const loc = locationRef.current;
-      if (loc.lat >= bounds.latMin && loc.lat <= bounds.latMax && loc.lon >= bounds.lonMin && loc.lon <= bounds.lonMax) {
-        const lx = projectX(loc.lon);
-        const ly = projectY(loc.lat);
+      {
+        const lx = Math.min(SIZE - 12, Math.max(12, projectX(loc.lon)));
+        const ly = Math.min(SIZE - 12, Math.max(12, projectY(loc.lat)));
         const pulse = (frame % 80) / 80;
         ctx.beginPath();
         ctx.arc(lx, ly, 8 + pulse * 18, 0, Math.PI * 2);
@@ -1032,6 +1031,16 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
         }
       }
 
+      if (strikesRef.current.length === 0) {
+        const msg = 'No strikes in this region in last 3 min - try Global';
+        ctx.font = 'bold 16px sans-serif';
+        const mW = ctx.measureText(msg).width;
+        ctx.fillStyle = 'rgba(10,26,46,0.85)';
+        ctx.fillRect(SIZE / 2 - mW / 2 - 14, SIZE / 2 - 22, mW + 28, 40);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(msg, SIZE / 2 - mW / 2, SIZE / 2 + 4);
+      }
+
       // Scan line effect
       const scanY = (frame * 1.2) % SIZE;
       const scanGrad = ctx.createLinearGradient(0, scanY - 50, 0, scanY + 50);
@@ -1104,17 +1113,17 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
           {status}
         </span>
         <span className="text-xs text-amber-300 font-bold flex items-center gap-1">
-          <Zap size={12} /> {count} strikes
+          <Zap size={12} /> {count} strikes {count === 0 && <span className="text-slate-400 font-normal">— No strikes in this region in last 3 min - try Global</span>}
         </span>
         <span className="ml-auto text-[10px] text-slate-500">Blitzortung.org via server proxy &bull; polls every 15s</span>
       </div>
 
       {/* Error message */}
-      {error && !connected && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 flex items-start gap-2">
-          <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+      {error && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-xs text-amber-200 font-medium">{error}</p>
+            <p className="text-xs text-red-200 font-medium break-words">{error}</p>
             <p className="text-[11px] text-slate-400 mt-1">The map will update automatically once the connection is restored. Lightning activity varies by time of day and weather conditions.</p>
           </div>
         </div>
@@ -1122,9 +1131,9 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
 
       {/* Region selector */}
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setRegion('nearby')} className={region === 'nearby' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Near {location?.name ?? 'Ratchaburi'}</button>
-        <button onClick={() => setRegion('asia')} className={region === 'asia' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Asia-Pacific</button>
-        <button onClick={() => setRegion('europe')} className={region === 'europe' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Europe/Africa</button>
+        <button onClick={() => setRegion('nearby')} className={region === 'nearby' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Nearby</button>
+        <button onClick={() => setRegion('asia')} className={region === 'asia' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Asia</button>
+        <button onClick={() => setRegion('europe')} className={region === 'europe' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Europe</button>
         <button onClick={() => setRegion('americas')} className={region === 'americas' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Americas</button>
         <button onClick={() => setRegion('global')} className={region === 'global' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>Global</button>
       </div>
@@ -1161,7 +1170,7 @@ export function LiveTrackersModal({ open, onClose, location, hourly }: { open: b
           <h2 className="text-white font-bold flex items-center gap-2 text-sm"><AlertTriangle size={18} className="text-amber-400" /> Live Trackers • {location?.name ?? 'Ratchaburi'}</h2>
           <button onClick={onClose} className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"><X size={18} /></button>
         </div>
-        <div className="flex gap-2 px-3 sm:px-6 py-3 bg-slate-900/60 overflow-x-auto">
+        <div className="flex flex-wrap gap-2 px-3 sm:px-6 py-3 bg-slate-900/60">
           <button onClick={() => setTab('precip')} className={tab === 'precip' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Precipitation</button>
           <button onClick={() => setTab('warnings')} className={tab === 'warnings' ? 'px-3 py-1.5 rounded-full text-xs bg-amber-500 text-white border border-amber-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>⚠️ Severe Warnings</button>
           <button onClick={() => setTab('satellite')} className={tab === 'satellite' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Satellite</button>

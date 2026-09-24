@@ -189,7 +189,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-lg">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2 flex-wrap">
             <CloudSun className="text-sky-400" size={28} />
             <div>
@@ -197,11 +197,11 @@ function AppContent() {
               <p className="text-xs text-slate-400">{t('appTagline')}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <SettingsBar />
             <button
               onClick={() => setActiveView('logs')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${activeView === 'logs' ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${activeView === 'logs' ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
             >
               <ClipboardList size={16} />
               <span className="">Logs</span>
@@ -209,21 +209,21 @@ function AppContent() {
             <button
               onClick={() => void handleRefresh()}
               disabled={!location || refreshing}
-              className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
               <span className="">Refresh</span>
             </button>
             <button
               onClick={() => setShowTrackers(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-red-500/90 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-400"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-red-500/90 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-400"
             >
               <Radar size={16} />
               <span className="">{t('liveTrackers')}</span>
             </button>
             <button
               onClick={() => setShowModels(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400"
             >
               <Layers size={16} />
               <span className="">{t('weatherModelsLive')}</span>
