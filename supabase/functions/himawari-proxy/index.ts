@@ -12,16 +12,30 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const sat = url.searchParams.get("sat") || "himawari";
 
-  const ALIASES: Record<string, string> = {
-    himawari: "HIMAWARI9",
-    jma: "HIMAWARI9",
+  // NOAA's CDN no longer hosts Himawari, so himawari/jma use JMA's own imagery
+  // (se1 = Southeast Asia true-colour, fd_ = full disk), newest 10-min slot in UTC.
+  const jmaCandidates = (area: "se1" | "fd_"): string[] => {
+    const out: string[] = [];
+    const base = Date.now() - 20 * 60 * 1000;
+    for (let k = 0; k < 6; k++) {
+      const d = new Date(base - k * 10 * 60 * 1000);
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(Math.floor(d.getUTCMinutes() / 10) * 10).padStart(2, "0");
+      out.push(`https://www.data.jma.go.jp/mscweb/data/himawari/img/${area}/${area}_trm_${hh}${mm}.jpg`);
+    }
+    return out;
+  };
+  const NOAA: Record<string, string> = {
     "goes-east": "GOES16",
     "goes-west": "GOES18",
     meteosat: "METEOSAT11",
     iodc: "METEOSAT9",
   };
-  const folder = ALIASES[sat];
-  const target = folder ? `https://cdn.star.nesdis.noaa.gov/${folder}/ABI/FD/GEOCOLOR/1808x1808.jpg` : "";
+  let targets: string[] = [];
+  if (sat === "himawari") targets = [...jmaCandidates("se1"), ...jmaCandidates("fd_")];
+  else if (sat === "jma") targets = jmaCandidates("fd_");
+  else if (NOAA[sat]) targets = [`https://cdn.star.nesdis.noaa.gov/${NOAA[sat]}/ABI/FD/GEOCOLOR/1808x1808.jpg`];
+  const target = targets[0] ?? "";
 
   if (!target) {
     return new Response(
