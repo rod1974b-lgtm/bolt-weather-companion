@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
-import { callFunction } from '@/modelcast/lib/supabase';
+import { callFunction, supabaseUrl, supabaseAnonKey } from '@/modelcast/lib/supabase';
 import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/modelcast/lib/liveTrackers';
 import type { TropicalStorm } from '@/modelcast/lib/liveTrackers';
 import { X, Satellite, Wind, Zap, ExternalLink, Loader2, AlertTriangle, Clock, CheckCircle2, Info } from 'lucide-react';
@@ -92,7 +92,9 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
     return () => { mounted = false; };
   }, [lat, lon]);
 
-  const locName = location?.name ?? 'this area';
+  const locName = location?.name ?? 'Ratchaburi';
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [updatedAt] = useState(() => new Date());
 
   if (loading) {
     return (
@@ -103,18 +105,27 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
     );
   }
 
+  const rank = (s: string) => ({ extreme: 0, severe: 1, moderate: 2, minor: 3 } as Record<string, number>)[s.toLowerCase()] ?? 4;
+  const sorted = [...alerts].sort((a, b) => rank(a.severity) - rank(b.severity) || new Date(a.expires).getTime() - new Date(b.expires).getTime());
+  const endsIn = (iso: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const h = Math.max(0, Math.round((d.getTime() - Date.now()) / 3600000));
+    return `Ends in ${h}h ${fmtICT(d)} ICT`;
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
         <AlertTriangle size={18} className="text-amber-400" />
         <h3 className="text-white font-bold text-sm">Severe Weather Warnings &bull; {locName}</h3>
         <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-          {alerts.length} {alerts.length === 1 ? 'warning' : 'warnings'} &bull; Live
+          {alerts.length} {alerts.length === 1 ? 'warning' : 'warnings'} &bull; Live &bull; Updated {fmtICT(updatedAt)} ICT
         </span>
       </div>
 
       {error && alerts.length === 0 && (
-        <ProxyErrorBanner message={error} mapUrl={`https://www.windy.com/?${lat},${lon},6`} mapLabel="Open Alerts Map" />
+        <ProxyErrorBanner message={error} mapUrl="https://www.tmd.go.th/en/" mapLabel="Open TMD Warnings" />
       )}
 
       {alerts.length === 0 && !error && (
@@ -125,66 +136,40 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
         </div>
       )}
 
-      {alerts.map((a) => {
+      {sorted.map((a) => {
         const colors = severityColor(a.severity);
+        const open = openId === a.id;
         return (
-          <div key={a.id} className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden shadow-lg`}>
-            <div className="p-4">
-              <div className="flex items-start gap-3">
-                <div className={`w-12 h-12 rounded-full ${colors.bg} flex items-center justify-center flex-shrink-0 border ${colors.border}`}>
-                  <AlertTriangle size={20} className={colors.text} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-white font-bold text-[13px]">{a.alertType}</h4>
-                      <p className="text-slate-400 text-xs">{a.area}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded border ${colors.border} ${colors.text} text-xs ${colors.bg} whitespace-nowrap font-medium capitalize`}>{a.severity}</span>
-                  </div>
-                  {(a.onset || a.expires) && (
-                    <div className="mt-3 text-xs text-slate-300 bg-slate-800/50 rounded px-2 py-1.5 flex items-center gap-1.5">
-                      <Clock size={12} className="text-slate-400 flex-shrink-0" />
-                      <span className="text-[11px] leading-tight">
-                        {a.onset && <>From <b>{formatAlertTime(a.onset)}</b></>}
-                        {a.onset && a.expires && ' '}
-                        {a.expires && <>until <b>{formatAlertTime(a.expires)}</b></>}
-                      </span>
-                    </div>
-                  )}
-                </div>
+          <div key={a.id} className={`rounded-xl border-l-4 border ${colors.border} ${colors.bg} overflow-hidden`}>
+            <button onClick={() => setOpenId(open ? null : a.id)} className="w-full text-left p-3 flex items-center gap-3">
+              <AlertTriangle size={16} className={`${colors.text} flex-shrink-0`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-white font-bold text-[13px]">{a.alertType}</div>
+                <div className="text-slate-400 text-[11px]">{locName} {lat.toFixed(2)},{lon.toFixed(2)} {endsIn(a.expires)}</div>
               </div>
-
-              {a.description && (
-                <div className="mt-4">
-                  <h5 className="text-white font-bold text-xs mb-2">Description</h5>
-                  <div className="rounded border border-slate-600 p-3 bg-[#2a3648]/70">
-                    <p className="text-slate-200 text-xs leading-relaxed whitespace-pre-line">{a.description}</p>
+              <span className={`px-2 py-0.5 rounded border ${colors.border} ${colors.text} text-[11px] whitespace-nowrap font-medium capitalize`}>{a.severity}</span>
+              <span className="text-slate-400 text-xs">{open ? '▲' : '▼'}</span>
+            </button>
+            {open && (
+              <div className="px-3 pb-3 space-y-2">
+                {(a.onset || a.expires) && (
+                  <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                    <Clock size={12} className="text-slate-400" />
+                    {a.onset && <>From <b>{formatAlertTime(a.onset)}</b></>} {a.expires && <>until <b>{formatAlertTime(a.expires)}</b></>}
                   </div>
-                </div>
-              )}
-
-              {a.instruction && (
-                <div className="mt-3">
-                  <h5 className="text-white font-bold text-xs mb-2">Instructions</h5>
-                  <div className="rounded border border-slate-600 p-3 bg-[#2a3648]/70">
-                    <p className="text-slate-200 text-xs leading-relaxed whitespace-pre-line">{a.instruction}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-3 space-y-1 text-[11px] text-slate-400 border-t border-slate-700/50 pt-3">
-                <div>Source: <span className="text-slate-300">{a.source ?? 'Open-Meteo forecast data'}</span></div>
-                <div>Certainty: <span className="text-slate-300">{a.certainty}</span></div>
+                )}
+                {a.description && <p className="text-slate-200 text-xs leading-relaxed whitespace-pre-line rounded border border-slate-600 p-2 bg-slate-800/60">{a.description}</p>}
+                {a.instruction && <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line rounded border border-slate-600 p-2 bg-slate-800/60">{a.instruction}</p>}
+                <div className="text-[10px] text-slate-500">Certainty: {a.certainty} &bull; Source: {a.source ?? 'Open-Meteo forecast data'}</div>
               </div>
-            </div>
+            )}
           </div>
         );
       })}
 
-      <div className="rounded-lg bg-slate-800 border border-slate-700 p-3 text-[11px] text-slate-400 flex items-center gap-2">
+      <div className="rounded-lg bg-slate-800 border border-slate-700 p-3 text-[11px] text-slate-400 flex items-center gap-2 flex-wrap">
         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-        Live alerts from Open-Meteo forecast + official TMD warnings (Thailand) &bull; updates when you open this tab
+        Model Open-Meteo &bull; check <a href="https://www.tmd.go.th/en/" target="_blank" rel="noreferrer" className="text-sky-400 underline">TMD</a> for official warnings
       </div>
     </div>
   );
@@ -200,10 +185,16 @@ interface PrecipHour {
   isNow: boolean;
 }
 
+function precipLevel(mm: number): string {
+  if (mm > 7.5) return 'Heavy';
+  if (mm >= 2.5) return 'Moderate';
+  if (mm > 0) return 'Light';
+  return 'None';
+}
+
 function precipBarColor(mm: number): string {
-  if (mm >= 5) return '#1d4ed8';
-  if (mm >= 2) return '#2563eb';
-  if (mm >= 0.5) return '#3b82f6';
+  if (mm > 7.5) return '#1e3a8a';
+  if (mm >= 2.5) return '#2563eb';
   if (mm > 0) return '#60a5fa';
   return '#334155';
 }
@@ -291,10 +282,10 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
     );
   }
 
-  const maxPrecip = Math.max(2, ...hours.map(h => h.precip));
-  const yMax = Math.ceil(maxPrecip);
-  const yTicks = 5;
-  const tickStep = yMax / (yTicks - 1);
+  const maxPrecip = Math.max(0, ...hours.map(h => h.precip));
+  const yMax = Math.max(12, Math.ceil(maxPrecip / 3) * 3);
+  const tickStep = 3;
+  const yTicks = yMax / tickStep + 1;
 
   const numHours = hours.length;
   const barSlot = 7;
@@ -322,6 +313,9 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   const nowIdx = hours.findIndex(h => h.isNow);
   const nextRain = nowIdx >= 0 ? hours.find((h, i) => i > nowIdx && h.precip > 0.1) : undefined;
   const totalForecast = hours.slice(nowIdx >= 0 ? nowIdx : 0).reduce((sum, h) => sum + h.precip, 0);
+  let peakIdx = -1;
+  hours.forEach((h, i) => { if (h.precip > 0 && (peakIdx < 0 || h.precip > hours[peakIdx]!.precip)) peakIdx = i; });
+  const peakHour = peakIdx >= 0 ? hours[peakIdx] : undefined;
 
   const xForIdx = (i: number) => padL + i * barSlot + barSlot / 2;
   const yForVal = (v: number) => padT + plotH - (v / yMax) * plotH;
@@ -335,7 +329,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
         </div>
         {lastUpdated && (
           <span className="text-[10px] text-slate-500 ml-auto">
-            Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &bull; auto-refresh 5min
+            Updated {fmtICT(lastUpdated)} ICT &bull; auto-refresh 5min
           </span>
         )}
       </div>
@@ -385,13 +379,22 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
             </div>
           </div>
 
+          <div className={`rounded-lg px-3 py-2 text-xs flex items-center gap-2 border ${totalForecast > 100 ? 'bg-red-500/10 border-red-500/40 text-red-200' : 'bg-slate-800/60 border-slate-700/50 text-slate-300'}`}>
+            {totalForecast > 100 ? <AlertTriangle size={14} className="text-red-400" /> : <Info size={14} className="text-sky-400" />}
+            {totalForecast > 100
+              ? `Flood warning: ${totalForecast.toFixed(0)}mm expected over 3 days - avoid low-lying areas and waterways.`
+              : peakHour && peakHour.precip > 0.1
+                ? `Bring an umbrella - peak rain around ${new Date(peakHour.time).toLocaleDateString('en', { weekday: 'short', day: 'numeric' })} ${String(peakHour.hour).padStart(2, '0')}:00 (${peakHour.precip.toFixed(1)}mm).`
+                : 'No significant rain expected - no umbrella needed.'}
+          </div>
+
           <div className="rounded-2xl border border-slate-700/50 bg-[#1a2332]/90 p-4">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="text-white font-bold text-sm">Estimated Precipitation &bull; {locName}</h3>
-              <div className="flex items-center gap-3 text-[10px] text-slate-400">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#60a5fa' }} /> Light</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#2563eb' }} /> Moderate</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#1d4ed8' }} /> Heavy</span>
+              <div className="flex items-center gap-3 text-[10px] text-slate-400 flex-wrap">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#60a5fa' }} /> Light &lt;2.5</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#2563eb' }} /> Mod 2.5-7.5</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#1e3a8a' }} /> Heavy &gt;7.5</span>
               </div>
             </div>
 
@@ -415,7 +418,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   return (
                     <g key={i}>
                       <line x1={padL} y1={y} x2={padL + chartW} y2={y} stroke="#334155" strokeWidth={0.4} strokeDasharray="3 4" />
-                      <text x={padL - 8} y={y + 3.5} textAnchor="end" className="fill-slate-500" style={{ fontSize: 10 }}>{val.toFixed(1)}</text>
+                      <text x={padL - 8} y={y + 3.5} textAnchor="end" className="fill-slate-500" style={{ fontSize: 10 }}>{val}</text>
                     </g>
                   );
                 })}
@@ -427,11 +430,16 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   const bw = barSlot * 0.65;
                   const bx = padL + i * barSlot + (barSlot - bw) / 2;
                   const by = padT + plotH - barH;
+                  const d = new Date(h.time);
+                  const tip = `${d.toLocaleDateString('en', { weekday: 'short', day: 'numeric' })} ${String(h.hour).padStart(2, '0')}:00 - ${h.precip.toFixed(1)}mm ${precipLevel(h.precip)} ${h.prob}%`;
+                  const isPeak = i === peakIdx;
                   return (
                     <g key={i}>
-                      <rect x={bx} y={by} width={bw} height={barH} rx={0.5} fill={precipBarColor(h.precip)} opacity={h.isPast ? 0.5 : 0.9} />
-                      {h.prob > 0 && h.precip > 0.1 && (
-                        <text x={padL + i * barSlot + barSlot / 2} y={by - 3} textAnchor="middle" className="fill-sky-300" style={{ fontSize: 7, fontWeight: 600 }}>{h.prob}</text>
+                      <title>{tip}</title>
+                      <rect x={padL + i * barSlot} y={padT} width={barSlot} height={plotH} fill="transparent" />
+                      <rect x={bx} y={by} width={bw} height={barH} rx={0.5} fill={precipBarColor(h.precip)} opacity={h.isPast ? 0.5 : 0.9} stroke={isPeak ? '#fbbf24' : undefined} strokeWidth={isPeak ? 1.5 : undefined} />
+                      {isPeak && (
+                        <text x={padL + i * barSlot + barSlot / 2} y={by - 4} textAnchor="middle" fill="#fbbf24" style={{ fontSize: 9, fontWeight: 700 }}>Peak {h.precip.toFixed(1)}</text>
                       )}
                     </g>
                   );
