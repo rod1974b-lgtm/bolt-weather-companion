@@ -281,10 +281,9 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
     );
   }
 
-  const maxPrecip = Math.max(0, ...hours.map(h => h.precip));
-  const yMax = Math.max(12, Math.ceil(maxPrecip / 3) * 3);
+  const yMax = 12;
   const tickStep = 3;
-  const yTicks = yMax / tickStep + 1;
+  const yTicks = 5;
 
   const numHours = hours.length;
   const barSlot = 7;
