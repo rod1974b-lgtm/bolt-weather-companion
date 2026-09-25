@@ -45,10 +45,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const res = await fetch(target);
-    if (!res.ok) {
+    let res: Response | null = null;
+    for (const t of targets) {
+      res = await fetch(t);
+      if (res.ok) break;
+    }
+    if (!res || !res.ok) {
       return new Response(
-        JSON.stringify({ error: `Upstream fetch failed (${res.status})` }),
+        JSON.stringify({ error: `Upstream fetch failed (${res?.status ?? 0})` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
