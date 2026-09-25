@@ -492,12 +492,19 @@ function proxySource(sat: string): () => Promise<string> {
   };
 }
 
-const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[] }[] = [
+const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[]; unavailable?: string }[] = [
   { id: 'goes-east', name: 'GOES East - Americas', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
   { id: 'goes-west', name: 'GOES West - Pacific', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
   { id: 'himawari', name: 'Himawari - Thailand/Asia', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,5z/map=satellite', sources: [async () => jmaDirectUrl('se1'), async () => jmaDirectUrl('fd_'), proxySource('himawari')] },
   { id: 'jma', name: 'Japan JMA - Asia', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [async () => jmaDirectUrl('fd_'), async () => jmaDirectUrl('se1'), proxySource('himawari')] },
-  { id: 'meteosat', name: 'Meteosat - Europe/Africa', covers: false, mapUrl: 'https://zoom.earth/#view=0,0,3z/map=satellite', sources: [proxySource('meteosat')] },
+  {
+    id: 'meteosat',
+    name: 'Meteosat - Europe/Africa',
+    covers: false,
+    mapUrl: 'https://view.eumetsat.int/productviewer?v=default',
+    sources: [],
+    unavailable: 'Meteosat imagery is unavailable in this viewer because the former NOAA image source no longer exists.',
+  },
 ];
 
 function SatelliteTracker() {
@@ -557,7 +564,7 @@ function SatelliteTracker() {
           <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8">
             <Satellite size={40} className="mb-3 text-sky-400" />
             <p className="text-sm font-medium">Satellite image temporarily unavailable</p>
-            {lastErr && <p className="text-xs text-red-300 mt-2 break-words">{lastErr}</p>}
+            {(lastErr || current.unavailable) && <p className="text-xs text-red-300 mt-2 break-words">{lastErr || current.unavailable}</p>}
             <div className="mt-3 flex flex-wrap gap-2 justify-center">
               <button onClick={() => { setSrcIdx(0); setLastErr(null); setTick((t) => t + 1); }} className="px-3 py-1.5 rounded-full bg-slate-700 text-white text-xs hover:bg-slate-600">Retry</button>
               <a href={current.mapUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Satellite Map <ExternalLink size={10} /></a>
