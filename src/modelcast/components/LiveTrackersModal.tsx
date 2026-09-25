@@ -495,8 +495,8 @@ function proxySource(sat: string): () => Promise<string> {
 const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[] }[] = [
   { id: 'goes-east', name: 'GOES East - Americas', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
   { id: 'goes-west', name: 'GOES West - Pacific', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
-  { id: 'himawari', name: 'Himawari - Thailand/Asia', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,5z/map=satellite', sources: [proxySource('himawari'), proxySource('jma'), async () => jmaDirectUrl('se1')] },
-  { id: 'jma', name: 'Japan JMA - Asia', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [proxySource('jma'), async () => jmaDirectUrl('fd_')] },
+  { id: 'himawari', name: 'Himawari - Thailand/Asia', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,5z/map=satellite', sources: [async () => jmaDirectUrl('se1'), async () => jmaDirectUrl('fd_'), proxySource('himawari')] },
+  { id: 'jma', name: 'Japan JMA - Asia', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [async () => jmaDirectUrl('fd_'), async () => jmaDirectUrl('se1'), proxySource('himawari')] },
   { id: 'meteosat', name: 'Meteosat - Europe/Africa', covers: false, mapUrl: 'https://zoom.earth/#view=0,0,3z/map=satellite', sources: [proxySource('meteosat')] },
 ];
 
@@ -525,7 +525,7 @@ function SatelliteTracker() {
     if (!src) return;
     src()
       .then((u) => { if (!alive) return; if (u.startsWith('blob:')) made = u; setUrl(u); })
-      .catch((e: Error) => { if (!alive) return; console.error(e.message); setLastErr(e.message); setSrcIdx((i) => i + 1); });
+      .catch((e: Error) => { if (!alive) return; console.warn(e.message); setLastErr(e.message); setSrcIdx((i) => i + 1); });
     return () => { alive = false; if (made) URL.revokeObjectURL(made); };
   }, [active, srcIdx, tick, current]);
 
