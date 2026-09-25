@@ -1,4 +1,7 @@
-const corsHeaders = {
+goes-east = https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/1808x1808.jpg
+goes-west = https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/1808x1808.jpg
+himawari or jma = https://cdn.star.nesdis.noaa.gov/HIMAWARI9/ABI/FD/GEOCOLOR/1808x1808.jpg
+meteosat = https://cdn.star.nesdis.noaa.gov/METEOSAT11/ABI/FD/GEOCOLOR/1808x1808.jpgconst corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
