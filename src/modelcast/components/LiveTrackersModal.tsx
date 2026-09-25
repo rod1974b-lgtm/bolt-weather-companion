@@ -106,7 +106,7 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
   }
 
   const rank = (s: string) => ({ extreme: 0, severe: 1, moderate: 2, minor: 3 } as Record<string, number>)[s.toLowerCase()] ?? 4;
- const sorted = [...alerts].sort((a, b) => new Date(a.onset ?? a.effective ?? a.from ?? a.start ?? 0).getTime() - new Date(b.onset ?? b.effective ?? b.from ?? b.start ?? 0).getTime());
+ const sorted = [...alerts].sort((a, b) => new Date(a.expires).getTime() - new Date(b.expires).getTime());
     if (!iso) return '';
     const d = new Date(iso);
     const h = Math.max(0, Math.round((d.getTime() - Date.now()) / 3600000));
