@@ -473,11 +473,11 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
       )}
     </div>
   );
-}
-
-function jmaDirectUrl(area: 'se1' | 'fd_', minutesAgo: number): string {
-  const d = new Date(Date.now() - minutesAgo * 60 * 1000);
-  const hh = String(d.getUTCHours()).padStart(2, '0');
+goes-east -> YOUR_SUPABASE_URL/functions/v1/himawari-proxy?sat=goes-east
+goes-west -> YOUR_SUPABASE_URL/functions/v1/himawari-proxy?sat=goes-west
+himawari -> YOUR_SUPABASE_URL/functions/v1/himawari-proxy?sat=himawari
+jma -> YOUR_SUPABASE_URL/functions/v1/himawari-proxy?sat=jma
+meteosat -> YOUR_SUPABASE_URL/functions/v1/himawari-proxy?sat=meteosat
   const mm = String(Math.floor(d.getUTCMinutes() / 10) * 10).padStart(2, '0');
   return `https://www.data.jma.go.jp/mscweb/data/himawari/img/${area}/${area}_trm_${hh}${mm}.jpg`;
 }
