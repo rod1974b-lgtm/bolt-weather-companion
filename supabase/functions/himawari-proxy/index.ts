@@ -12,10 +12,16 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const sat = url.searchParams.get("sat") || "himawari";
 
-  let target = "";
-  if (sat === "himawari") target = "https://cdn.star.nesdis.noaa.gov/HIMAWARI9/ABI/FD/GEOCOLOR/1808x1808.jpg";
-  if (sat === "meteosat") target = "https://cdn.star.nesdis.noaa.gov/METEOSAT11/ABI/FD/GEOCOLOR/1808x1808.jpg";
-  if (sat === "iodc") target = "https://cdn.star.nesdis.noaa.gov/METEOSAT9/ABI/FD/GEOCOLOR/1808x1808.jpg";
+  const ALIASES: Record<string, string> = {
+    himawari: "HIMAWARI9",
+    jma: "HIMAWARI9",
+    "goes-east": "GOES16",
+    "goes-west": "GOES18",
+    meteosat: "METEOSAT11",
+    iodc: "METEOSAT9",
+  };
+  const folder = ALIASES[sat];
+  const target = folder ? `https://cdn.star.nesdis.noaa.gov/${folder}/ABI/FD/GEOCOLOR/1808x1808.jpg` : "";
 
   if (!target) {
     return new Response(
