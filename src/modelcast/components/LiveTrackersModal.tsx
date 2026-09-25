@@ -467,51 +467,172 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   );
 }
 
+function jmaDirectUrl(area: 'se1' | 'fd_'): string {
+  const d = new Date(Date.now() - 30 * 60 * 1000);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(Math.floor(d.getUTCMinutes() / 10) * 10).padStart(2, '0');
+  return `https://www.data.jma.go.jp/mscweb/data/himawari/img/${area}/${area}_trm_${hh}${mm}.jpg`;
+}
+
+function proxySource(sat: string): () => Promise<string> {
+  return async () => {
+    const res = await fetch(`${supabaseUrl}/functions/v1/himawari-proxy?sat=${sat}`, {
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+    });
+    if (!res.ok) throw new Error(`himawari-proxy?sat=${sat}: HTTP ${res.status}`);
+    return URL.createObjectURL(await res.blob());
+  };
+}
+
+const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[] }[] = [
+  { id: 'goes-east', name: 'GOES East - Americas', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
+  { id: 'goes-west', name: 'GOES West - Pacific', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
+  { id: 'himawari', name: 'Himawari - Thailand/Asia', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,5z/map=satellite', sources: [proxySource('himawari'), proxySource('jma'), async () => jmaDirectUrl('se1')] },
+  { id: 'jma', name: 'Japan JMA - Asia', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [proxySource('jma'), async () => jmaDirectUrl('fd_')] },
+  { id: 'meteosat', name: 'Meteosat - Europe/Africa', covers: false, mapUrl: 'https://zoom.earth/#view=0,0,3z/map=satellite', sources: [proxySource('meteosat')] },
+];
+
 function SatelliteTracker() {
-  const [active, setActive] = useState(0);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const SATS = [
-    { id: 'goes-east', name: 'GOES East - Americas', imageUrl: 'https://cdn.star.nesdis.noaa.gov/GOES16/ABI/FD/GEOCOLOR/latest.jpg', mapUrl: 'https://zoom.earth/#view=0,0,3z/map=satellite' },
-    { id: 'goes-west', name: 'GOES West - Pacific', imageUrl: 'https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/latest.jpg', mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite' },
-    { id: 'himawari', name: 'Himawari - Thailand/Asia', imageUrl: 'https://cdn.star.nesdis.noaa.gov/HIMAWARI9/ABI/FD/GEOCOLOR/latest.jpg', mapUrl: 'https://zoom.earth/#view=13.96,99.94,5z/map=satellite' },
-    { id: 'jma', name: 'Japan JMA - Asia', imageUrl: 'https://cdn.star.nesdis.noaa.gov/HIMAWARI9/ABI/FD/GEOCOLOR/latest.jpg', mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite' },
-    { id: 'meteosat', name: 'Meteosat - Europe/Africa', imageUrl: 'https://www.ospo.noaa.gov/eumet/eatl/rgb.jpg', mapUrl: 'https://www.ospo.noaa.gov/products/imagery/meteosat.html' },
-  ];
-  const current = SATS[active] ?? SATS[0]!;
+  const [active, setActive] = useState(2);
+  const [pending, setPending] = useState<number | null>(null);
+  const [srcIdx, setSrcIdx] = useState(0);
+  const [url, setUrl] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [lastErr, setLastErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const current = SATS[active] ?? SATS[2]!;
+  const failed = srcIdx >= current.sources.length;
 
   useEffect(() => {
-    setImageLoaded(false);
-    setImageError(false);
-  }, [active]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setRefreshTick((tick) => tick + 1), 10 * 60 * 1000);
+    const timer = setInterval(() => { setSrcIdx(0); setTick((t) => t + 1); }, 10 * 60 * 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const imageUrl = `${current.imageUrl}?t=${refreshTick}`;
+  useEffect(() => {
+    let alive = true;
+    let made: string | null = null;
+    setLoaded(false);
+    setUrl(null);
+    const src = current.sources[srcIdx];
+    if (!src) return;
+    src()
+      .then((u) => { if (!alive) return; if (u.startsWith('blob:')) made = u; setUrl(u); })
+      .catch((e: Error) => { if (!alive) return; console.error(e.message); setLastErr(e.message); setSrcIdx((i) => i + 1); });
+    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
+  }, [active, srcIdx, tick, current]);
+
+  const choose = (i: number) => {
+    if (!SATS[i]!.covers) { setPending(i); return; }
+    setPending(null); setActive(i); setSrcIdx(0); setLastErr(null);
+  };
+
+  const pill = (on: boolean) => on ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600';
 
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-3">
         {SATS.map((s, i) => (
-          <button key={s.id} onClick={() => setActive(i)} className={active === i ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600'}>{s.name}</button>
+          <button key={s.id} onClick={() => choose(i)} className={pill(active === i && pending === null)}>{s.name}</button>
         ))}
       </div>
+      {pending !== null && (
+        <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 flex flex-wrap items-center gap-3">
+          <Info size={16} className="text-amber-300" />
+          <span className="flex-1 min-w-[180px] text-xs text-amber-100">{SATS[pending]!.name}: Out of coverage for Ratchaburi - Switch to Himawari?</span>
+          <button onClick={() => choose(2)} className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs hover:bg-sky-500">Switch to Himawari</button>
+          <button onClick={() => { setActive(pending); setPending(null); setSrcIdx(0); setLastErr(null); }} className="px-3 py-1.5 rounded-full bg-slate-700 text-slate-200 text-xs hover:bg-slate-600">Load anyway</button>
+        </div>
+      )}
       <div className="relative bg-black rounded-xl overflow-hidden aspect-video min-h-[480px] border border-slate-700 flex items-center justify-center">
-        {!imageLoaded && !imageError && <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10 bg-slate-900"><Loader2 size={32} className="animate-spin mb-3 text-sky-400" /><span className="text-sm">Loading live satellite image...</span></div>}
-        {imageError ? (
-          <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8"><Satellite size={40} className="mb-3 text-sky-400" /><p className="text-sm font-medium">Satellite image temporarily unavailable</p><p className="text-xs text-slate-500 mt-2">Image failed to load.</p><a href={current.mapUrl} target="_blank" rel="noreferrer" className="mt-3 px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Satellite Map <ExternalLink size={10} /></a></div>
-        ) : (
-          <img key={imageUrl} src={imageUrl} alt={`${current.name} live satellite`} className={`w-full h-full min-h-[480px] object-contain bg-black transition-opacity ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setImageLoaded(true)} onError={() => setImageError(true)} />
+        {!failed && !loaded && <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10 bg-slate-900"><Loader2 size={32} className="animate-spin mb-3 text-sky-400" /><span className="text-sm">Loading live satellite image...</span></div>}
+        {failed ? (
+          <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8">
+            <Satellite size={40} className="mb-3 text-sky-400" />
+            <p className="text-sm font-medium">Satellite image temporarily unavailable</p>
+            {lastErr && <p className="text-xs text-red-300 mt-2 break-words">{lastErr}</p>}
+            <div className="mt-3 flex flex-wrap gap-2 justify-center">
+              <button onClick={() => { setSrcIdx(0); setLastErr(null); setTick((t) => t + 1); }} className="px-3 py-1.5 rounded-full bg-slate-700 text-white text-xs hover:bg-slate-600">Retry</button>
+              <a href={current.mapUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Satellite Map <ExternalLink size={10} /></a>
+            </div>
+          </div>
+        ) : url && (
+          <img key={url} src={url} alt={`${current.name} live satellite`} className={`w-full h-full min-h-[480px] object-contain bg-black transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} onError={() => { setLastErr(`${current.name}: image failed to load`); setSrcIdx((i) => i + 1); }} />
         )}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Live NOAA imagery &bull; refreshes every 10 minutes &bull; {current.name}</span>
+      <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[10px] text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Live imagery via himawari-proxy &bull; refreshes every 10 minutes &bull; {current.name}</span>
         <a href={current.mapUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Full Map <ExternalLink size={10} /></a>
       </div>
+    </div>
+  );
+}
+
+function fmtAgo(ms: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+function fmtICT(d: Date): string {
+  return d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+}
+
+const TILE = 256;
+function worldPx(lat: number, lon: number, z: number): { x: number; y: number } {
+  const n = TILE * 2 ** z;
+  const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
+  return { x: ((lon + 180) / 360) * n, y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n };
+}
+
+/** Minimal OpenStreetMap tile map (no dependencies). */
+function OsmMiniMap({ center, home, radiusKm, pins, selectedId, onPin, height = 300, zoom = 4 }: {
+  center: { lat: number; lon: number };
+  home: { lat: number; lon: number };
+  radiusKm: number;
+  pins: { id: string; lat: number; lon: number; mag: number }[];
+  selectedId: string | null;
+  onPin: (id: string) => void;
+  height?: number;
+  zoom?: number;
+}) {
+  const c = worldPx(center.lat, center.lon, zoom);
+  const n = 2 ** zoom;
+  const tx0 = Math.floor(c.x / TILE);
+  const ty0 = Math.floor(c.y / TILE);
+  const tiles: { key: string; x: number; y: number; url: string }[] = [];
+  for (let dx = -4; dx <= 4; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      const ty = ty0 + dy;
+      if (ty < 0 || ty >= n) continue;
+      const tx = tx0 + dx;
+      const wx = ((tx % n) + n) % n;
+      tiles.push({ key: `${tx}-${ty}`, x: tx * TILE - c.x, y: ty * TILE - c.y, url: `https://tile.openstreetmap.org/${zoom}/${wx}/${ty}.png` });
+    }
+  }
+  const pos = (lat: number, lon: number) => { const p = worldPx(lat, lon, zoom); return { x: p.x - c.x, y: p.y - c.y }; };
+  const h = pos(home.lat, home.lon);
+  const mpp = (156543.03 * Math.cos((home.lat * Math.PI) / 180)) / n;
+  const rPx = (radiusKm * 1000) / mpp;
+  const at = (p: { x: number; y: number }) => ({ left: `calc(50% + ${p.x}px)`, top: `calc(50% + ${p.y}px)` });
+  return (
+    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-800" style={{ height }}>
+      {tiles.map((t) => (
+        <img key={t.key} src={t.url} alt="" draggable={false} className="absolute max-w-none select-none" style={{ ...at(t), width: TILE, height: TILE }} />
+      ))}
+      <div className="absolute rounded-full border-2 border-sky-500 bg-sky-500/10 pointer-events-none" style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }} />
+      <div className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full bg-blue-600 border-2 border-white shadow" style={at(h)} title="Ratchaburi" />
+      {pins.map((p) => {
+        const size = Math.max(10, Math.min(24, p.mag * 4));
+        const sel = p.id === selectedId;
+        return (
+          <button key={p.id} onClick={() => onPin(p.id)} title={`M${p.mag}`} className={`absolute rounded-full border-2 ${sel ? 'border-white bg-red-500 z-10' : 'border-red-900 bg-orange-500/80'}`} style={{ ...at(pos(p.lat, p.lon)), width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2 }} />
+        );
+      })}
+      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-white/80 text-[9px] text-slate-700">© OpenStreetMap contributors</div>
     </div>
   );
 }
@@ -520,25 +641,39 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const [quakes, setQuakes] = useState<EarthquakeFeature[]>([]);
   const [loading, setLoading] = useState(true);
   const [qErr, setQErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
+  const [center, setCenter] = useState({ lat, lon });
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   useEffect(() => {
+    setCenter({ lat, lon });
     const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=1000&minmagnitude=2.5&limit=20&orderby=time`;
     setLoading(true); setQErr(null);
     fetch(url).then(r => { if (!r.ok) throw new Error(`USGS: HTTP ${r.status}`); return r.json(); }).then(d => setQuakes(d.features || [])).catch((e: Error) => { console.error(e.message); setQErr(e.message); }).finally(() => setLoading(false));
   }, [lat, lon]);
   if (loading) return <div className="flex justify-center py-20 text-slate-400"><Loader2 className="animate-spin mr-2" />Loading USGS earthquakes near Ratchaburi...</div>;
+  const pins = quakes.map((f) => ({ id: f.id, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], mag: f.properties.mag ?? 0 }));
   return (
-    <div className="space-y-2 max-h-[520px] overflow-y-auto">
-      <div className="text-[11px] text-slate-400 mb-2 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500" />USGS live - 1000km around Ratchaburi - M2.5+</div>
-      {qErr && <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-200 flex items-center gap-2"><AlertTriangle size={14} />{qErr}</div>}
+    <div className="space-y-3">
+      <div className="text-[11px] text-slate-400 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500" />USGS live - 1000km around Ratchaburi - M2.5+</div>
+      <OsmMiniMap center={center} home={{ lat, lon }} radiusKm={1000} pins={pins} selectedId={selected} onPin={(id) => { setSelected(id); rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />
+      {qErr && <ProxyErrorBanner message={qErr} mapUrl="https://earthquake.usgs.gov/earthquakes/map/" mapLabel="Open USGS Map" />}
       {!qErr && quakes.length === 0 && <div className="text-center text-slate-400 text-sm py-10">✓ No earthquakes &gt;2.5 within 1000km recently - Ratchaburi area clear</div>}
-      {quakes.map((f) => (
-        <div key={f.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600">
-          <div><div className="text-sm text-white font-medium">{f.properties.place}</div><div className="text-xs text-slate-400">M {f.properties.mag} • {new Date(f.properties.time ?? 0).toLocaleString()} • {f.geometry.coordinates[2]}km deep</div></div>
-          <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${f.id}`} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white p-2"><ExternalLink size={16} /></a>
-        </div>
-      ))}
+      <div className="space-y-2 max-h-[360px] overflow-y-auto">
+        {quakes.map((f) => {
+          const qLat = f.geometry.coordinates[1];
+          const qLon = f.geometry.coordinates[0];
+          const dist = Math.round(haversineKm(lat, lon, qLat, qLon));
+          const sel = selected === f.id;
+          return (
+            <div key={f.id} ref={(el) => { rowRefs.current[f.id] = el; }} onClick={() => { setSelected(f.id); setCenter({ lat: qLat, lon: qLon }); }} className={`cursor-pointer flex items-center justify-between p-3 rounded-xl bg-slate-800 border ${sel ? 'border-sky-400' : 'border-slate-700 hover:border-slate-600'}`}>
+              <div><div className="text-sm text-white font-medium">{f.properties.place}</div><div className="text-xs text-slate-400">M {f.properties.mag} • {dist.toLocaleString()} km from Ratchaburi • {fmtAgo(f.properties.time ?? 0)} • {f.geometry.coordinates[2]}km deep</div></div>
+              <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${f.id}`} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white p-2"><ExternalLink size={16} /></a>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -547,6 +682,8 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [, setNowTick] = useState(0);
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
 
@@ -555,106 +692,77 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
     setLoading(true);
     setError(null);
     fetchTropicalStorms()
-      .then((data) => {
-        if (!mounted) return;
-        setStorms(data);
-      })
-      .catch((e: Error) => {
-        if (!mounted) return;
-        setError(e.message);
-        setStorms([]);
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => { mounted = false; };
+      .then((data) => { if (mounted) { setStorms(data); setFetchedAt(Date.now()); } })
+      .catch((e: Error) => { if (mounted) { setError(e.message); setStorms([]); } })
+      .finally(() => { if (mounted) setLoading(false); });
+    const t = setInterval(() => setNowTick((n) => n + 1), 30000);
+    return () => { mounted = false; clearInterval(t); };
   }, []);
 
   const stormsWithDistance = storms
-    .map((s) => ({
-      ...s,
-      distanceKm: haversineKm(lat, lon, s.latitude, s.longitude),
-    }))
+    .map((s) => ({ ...s, distanceKm: haversineKm(lat, lon, s.latitude, s.longitude) }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
-
   const nearbyStorms = stormsWithDistance.filter((s) => s.distanceKm < 3000);
   const otherStorms = stormsWithDistance.filter((s) => s.distanceKm >= 3000);
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900 min-h-[600px] flex flex-col overflow-hidden">
-      <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
+      <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
         <span className="text-sm text-white font-bold flex items-center gap-2"><Wind size={16} className="text-sky-400" />Hurricane &amp; Typhoon Tracker LIVE</span>
         <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/20 text-green-300 border border-green-500/30">
-          {loading ? 'Loading...' : `${storms.length} active`}
+          {loading ? 'Loading...' : `${storms.length} active${fetchedAt ? ` • Updated ${fmtAgo(fetchedAt)}` : ''}`}
         </span>
       </div>
       <div className="flex-1 p-3 bg-slate-900 space-y-3 overflow-y-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-            <div className="p-2 bg-slate-800 text-xs text-white font-medium flex items-center justify-between"><span>Atlantic &bull; NHC</span><a href="https://www.nhc.noaa.gov/" target="_blank" rel="noreferrer" className="text-sky-400"><ExternalLink size={12} /></a></div>
-            <img src="https://www.nhc.noaa.gov/xgtwo/two_atl_0d0.png" alt="Atlantic Tropical Outlook" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="p-2 text-[10px] text-slate-400">Atlantic 2-day tropical outlook - updates every 6h</div>
-          </div>
-          <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-            <div className="p-2 bg-slate-800 text-xs text-white font-medium flex items-center justify-between"><span>East Pacific &bull; NHC</span><a href="https://www.nhc.noaa.gov/?epac" target="_blank" rel="noreferrer" className="text-sky-400"><ExternalLink size={12} /></a></div>
-            <img src="https://www.nhc.noaa.gov/xgtwo/two_pac_0d0.png" alt="Pacific Tropical Outlook" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="p-2 text-[10px] text-slate-400">East Pacific outlook</div>
-          </div>
-        </div>
-
         <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
           <div className="p-2 bg-slate-800 text-xs text-white font-medium">Western Pacific &bull; Typhoons near Thailand</div>
           <div className="p-3">
             {loading && (
               <div className="flex items-center justify-center py-10 text-slate-400">
                 <Loader2 size={20} className="animate-spin mr-2" />
-                <span className="text-sm">Fetching live storm data from NHC...</span>
+                <span className="text-sm">Fetching live storm data...</span>
               </div>
             )}
-
             {error && !loading && (
-              <ProxyErrorBanner message={`${error} — NHC outlook images above still work.`} mapUrl={`https://zoom.earth/storms/`} mapLabel="Open Storm Map" />
+              <ProxyErrorBanner message={error} mapUrl={`https://zoom.earth/storms/`} mapLabel="Open Storm Map" />
             )}
-
             {!loading && !error && storms.length === 0 && (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <CheckCircle2 size={32} className="text-green-400 mb-2" />
-                <p className="text-sm font-medium text-slate-200">No active tropical cyclones right now</p>
-                <p className="text-xs text-slate-500 mt-1">NHC reports no active storms in any basin.</p>
+                <p className="text-sm font-medium text-slate-200">No active cyclones</p>
+                <p className="text-xs text-slate-500 mt-1">No active tropical storms reported in any basin.</p>
               </div>
             )}
-
             {!loading && !error && nearbyStorms.length > 0 && (
               <div className="space-y-2">
                 <div className="text-[11px] text-amber-300 font-medium flex items-center gap-1"><AlertTriangle size={12} /> Near {location?.name ?? 'Ratchaburi'} (within 3000km)</div>
-                {nearbyStorms.map((s) => (
-                  <StormCard key={s.id} storm={s} />
-                ))}
+                {nearbyStorms.map((s) => <StormCard key={s.id} storm={s} />)}
               </div>
             )}
-
             {!loading && !error && otherStorms.length > 0 && (
               <div className="space-y-2 mt-3">
                 {nearbyStorms.length > 0 && <div className="text-[11px] text-slate-400 font-medium pt-2 border-t border-slate-700/50">Other active storms</div>}
-                {otherStorms.map((s) => (
-                  <StormCard key={s.id} storm={s} />
-                ))}
+                {otherStorms.map((s) => <StormCard key={s.id} storm={s} />)}
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2">
+        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/50">
+          <summary className="p-2 bg-slate-800 text-xs text-white font-medium cursor-pointer">Atlantic &bull; NHC <span className="text-slate-400 font-normal">&bull; out of coverage for Ratchaburi</span></summary>
+          <img src="https://www.nhc.noaa.gov/xgtwo/two_atl_0d0.png" alt="Atlantic Tropical Outlook" loading="lazy" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        </details>
+        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/50">
+          <summary className="p-2 bg-slate-800 text-xs text-white font-medium cursor-pointer">East Pacific &bull; NHC <span className="text-slate-400 font-normal">&bull; out of coverage for Ratchaburi</span></summary>
+          <img src="https://www.nhc.noaa.gov/xgtwo/two_pac_0d0.png" alt="Pacific Tropical Outlook" loading="lazy" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        </details>
+
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <span className="text-[10px] text-slate-400 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Live data from NHC ATCF &bull; storm details update every 6h
+            Live data via hurricane-tracker &bull; storm details update every 6h
           </span>
-          <a
-            href={`https://www.windy.com/?hurricaneTracker,${lat},${lon},5`}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500"
-          >
+          <a href={`https://www.windy.com/?hurricaneTracker,${lat},${lon},5`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">
             Open Full Map <ExternalLink size={10} />
           </a>
         </div>
@@ -1032,7 +1140,8 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
       }
 
       if (strikesRef.current.length === 0) {
-        const msg = 'No strikes in this region in last 3 min - try Global';
+        const r = regionRef.current;
+        const msg = r === 'global' ? 'No strikes Global in last 3 min' : `No strikes ${r === 'nearby' ? 'Nearby' : getRegionBounds(r, 0, 0).label} - View ${r === 'nearby' ? 'Asia' : 'Global'}?`;
         ctx.font = 'bold 16px sans-serif';
         const mW = ctx.measureText(msg).width;
         ctx.fillStyle = 'rgba(10,26,46,0.85)';
@@ -1113,7 +1222,19 @@ function LightningTracker({ location }: { location: GeoLocation | null }) {
           {status}
         </span>
         <span className="text-xs text-amber-300 font-bold flex items-center gap-1">
-          <Zap size={12} /> {count} strikes {count === 0 && <span className="text-slate-400 font-normal">— No strikes in this region in last 3 min - try Global</span>}
+          <Zap size={12} /> {count} strikes
+        </span>
+        {count === 0 && (() => {
+          const next: LightningRegion = region === 'nearby' ? 'asia' : 'global';
+          const label = region === 'nearby' ? 'Nearby' : getRegionBounds(region, 0, 0).label;
+          if (region === 'global') return <span className="text-xs text-slate-400">No strikes Global in last 3 min</span>;
+          return (
+            <button onClick={() => setRegion(next)} className="px-2.5 py-1 rounded-full bg-sky-600 text-white text-[11px] hover:bg-sky-500">
+              No strikes {label} - View {next === 'asia' ? 'Asia' : 'Global'}?
+            </button>
+          );
+        })()}
+        <span className="hidden">
         </span>
         <span className="ml-auto text-[10px] text-slate-500">Blitzortung.org via server proxy &bull; polls every 15s</span>
       </div>
