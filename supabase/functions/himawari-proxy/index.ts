@@ -28,10 +28,17 @@ Deno.serve(async (req: Request) => {
   const NOAA: Record<string, string> = {
     "goes-east": "GOES16",
     "goes-west": "GOES18",
-    meteosat: "METEOSAT11",
-    iodc: "METEOSAT9",
   };
   let targets: string[] = [];
+  if (sat === "meteosat" || sat === "iodc") {
+    return new Response(
+      JSON.stringify({
+        error: "Meteosat image feed unavailable",
+        mapUrl: "https://view.eumetsat.int/productviewer?v=default",
+      }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
   if (sat === "himawari") targets = [...jmaCandidates("se1"), ...jmaCandidates("fd_")];
   else if (sat === "jma") targets = jmaCandidates("fd_");
   else if (NOAA[sat]) targets = [`https://cdn.star.nesdis.noaa.gov/${NOAA[sat]}/ABI/FD/GEOCOLOR/1808x1808.jpg`];
