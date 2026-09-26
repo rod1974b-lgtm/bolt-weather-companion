@@ -1387,7 +1387,7 @@ function OsmMiniMap({
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
   radiusKm: number;
-  pins: { id: string; lat: number; lon: number; mag: number; place?: string }[];
+  pins: { id: string; lat: number; lon: number; mag: number; place?: string | undefined }[];
   selectedId: string | null;
   onPin: (id: string) => void;
   zoom: number;
