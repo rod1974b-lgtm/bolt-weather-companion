@@ -365,11 +365,18 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
             </div>
             <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-3">
               <div className="text-[10px] text-slate-400 uppercase tracking-wide">Next Rain</div>
-              {nextRain ? (
-                <div className="mt-1">
-                  <span className="text-xl font-bold text-sky-300">{new Date(nextRain.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{nextRain.precip.toFixed(1)} mm &bull; {nextRain.prob}%</div>
-                </div>
+              {nextRain ? (() => {
+                const mins = Math.max(0, Math.round((new Date(nextRain.time).getTime() - Date.now()) / 60000));
+                return (
+                  <div className="mt-1">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold text-sky-300">{nextRain.precip.toFixed(1)}</span>
+                      <span className="text-xs text-slate-400">mm &bull; {nextRain.prob}%</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">in {Math.floor(mins / 60)}h {mins % 60}m &bull; {fmtICT(new Date(nextRain.time))} ICT</div>
+                  </div>
+                );
+              })() : (
               ) : (
                 <div className="mt-1">
                   <span className="text-base font-bold text-green-400">Clear</span>
@@ -446,9 +453,11 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                       <title>{tip}</title>
                       <rect x={padL + i * barSlot} y={padT} width={barSlot} height={plotH} fill="transparent" />
                       <rect x={bx} y={by} width={bw} height={barH} rx={0.5} fill={precipBarColor(h.precip)} opacity={h.isPast ? 0.5 : 0.9} stroke={isPeak ? '#fbbf24' : undefined} strokeWidth={isPeak ? 1.5 : undefined} />
-                      {isPeak && (
+                      {isPeak ? (
                         <text x={padL + i * barSlot + barSlot / 2} y={by - 4} textAnchor="middle" fill="#fbbf24" style={{ fontSize: 9, fontWeight: 700 }}>Peak {h.precip.toFixed(1)}</text>
-                      )}
+                      ) : h.precip > 0.5 && h.prob > 20 ? (
+                        <text x={padL + i * barSlot + barSlot / 2} y={by - 3} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 7 }}>{h.prob}%</text>
+                      ) : null}
                     </g>
                   );
                 })}
