@@ -856,11 +856,23 @@ function proxySource(sat: string): () => Promise<string> {
   };
 }
 
+// Load NOAA imagery straight from its public CDN (no proxy needed for <img>), cache-busted every 10 min.
+function directSource(url: string): () => Promise<string> {
+  return () =>
+    new Promise((resolve, reject) => {
+      const src = `${url}?t=${Math.floor(Date.now() / 600_000)}`;
+      const img = new Image();
+      img.onload = () => resolve(src);
+      img.onerror = () => reject(new Error(`Direct image failed: ${url}`));
+      img.src = src;
+    });
+}
+
 const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[]; unavailable?: string }[] = [
   { id: 'himawari', name: 'Himawari-9 (Thailand / SE Asia)', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,6z/map=satellite', sources: [] },
   { id: 'jma-full', name: 'Japan JMA (Asia Full Disk)', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [] },
-  { id: 'goes-east', name: 'GOES East (Americas)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
-  { id: 'goes-west', name: 'GOES West (Pacific)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
+  { id: 'goes-east', name: 'GOES East (Americas)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [directSource('https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/1808x1808.jpg'), proxySource('goes-east')] },
+  { id: 'goes-west', name: 'GOES West (Pacific)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [directSource('https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/1808x1808.jpg'), proxySource('goes-west')] },
   {
     id: 'meteosat',
     name: 'Meteosat (Europe / Africa)',
