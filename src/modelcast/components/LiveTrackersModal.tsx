@@ -2519,6 +2519,11 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             <span className="text-xs text-slate-400">
               {`${regionalStrikes.length} strikes/15m in ${activeConfig.label}`}
             </span>
+            <span className="text-[11px] text-slate-400 block mt-1">
+{region === 'americas'
+? `N.Am ${regionalStrikes.filter(s=>s.lat>=23.5).length} • Tropics ${regionalStrikes.filter(s=>s.lat>-23.5&&s.lat<23.5).length} • S.Am ${regionalStrikes.filter(s=>s.lat<=-23.5).length}`
+: `Am ${regionalStrikes.filter(s=>s.lon>=-130&&s.lon<=-30).length} • EU/AF ${regionalStrikes.filter(s=>s.lon>-30&&s.lon<=60).length} • AP ${regionalStrikes.filter(s=>s.lon>60||s.lon<-130).length}`}
+</span>
           </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
             {regionalStrikes.length} strikes
