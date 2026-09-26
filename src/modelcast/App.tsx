@@ -49,15 +49,17 @@ function AppContent() {
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites();
   const [restored, setRestored] = useState(false);
 
-  const loadWeather = useCallback(async (loc: GeoLocation) => {
-    setLoading(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const loadWeather = useCallback(async (loc: GeoLocation, force = false) => {
+    if (!force) setLoading(true);
     setError(null);
     try {
       const [cur, hr, dl] = await Promise.all([
-        fetchCurrentWeather(loc.latitude, loc.longitude),
-        fetchHourlyForecast(loc.latitude, loc.longitude),
-        fetchDailyForecast(loc.latitude, loc.longitude),
+        fetchCurrentWeather(loc.latitude, loc.longitude, force),
+        fetchHourlyForecast(loc.latitude, loc.longitude, force),
+        fetchDailyForecast(loc.latitude, loc.longitude, force),
       ]);
+      setLastUpdated(new Date());
       setCurrent(cur);
       setHourly(hr);
       setDaily(dl);
@@ -129,6 +131,8 @@ function AppContent() {
       if (raw) {
         const last = JSON.parse(raw) as GeoLocation;
         handleSelect(last);
+      } else {
+        handleSelect({ id: 1150965, name: 'Ratchaburi', latitude: 13.54, longitude: 99.82, country: 'Thailand', admin1: 'Ratchaburi', timezone: 'Asia/Bangkok', country_code: 'TH' } as GeoLocation);
       }
     } catch {
       // ignore
@@ -141,13 +145,13 @@ function AppContent() {
     if (!location) return;
     setRefreshing(true);
     await Promise.all([
-      loadWeather(location),
+      loadWeather(location, true),
       loadLocalVotes(location),
       loadGlobalVotes(),
       loadAccuracy(location),
     ]);
     setRefreshing(false);
-  }, [location, loadWeather, loadLocalVotes, loadGlobalVotes]);
+  }, [location, loadWeather, loadLocalVotes, loadGlobalVotes, loadAccuracy]);
 
   const topModel: WeatherModel = useMemo(() => {
     const scores = new Map<string, number>();
@@ -288,6 +292,11 @@ function AppContent() {
               locationName={location.name}
               country={location.country}
             />
+            {lastUpdated && (
+              <p className="-mt-4 text-right text-xs text-slate-400">
+                Last updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })} ICT
+              </p>
+            )}
             <TopModelForecast
               location={location}
               model={topModel}

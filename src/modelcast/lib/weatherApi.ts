@@ -15,9 +15,9 @@ function setCached(key: string, data: unknown) {
   cache.set(key, { data, ts: Date.now() });
 }
 
-export async function fetchCurrentWeather(lat: number, lon: number): Promise<CurrentWeather> {
+export async function fetchCurrentWeather(lat: number, lon: number, forceRefresh = false): Promise<CurrentWeather> {
   const key = `current_${lat.toFixed(2)},${lon.toFixed(2)}`;
-  const cached = getCached<CurrentWeather>(key);
+  const cached = forceRefresh ? null : getCached<CurrentWeather>(key);
   if (cached) return cached;
 
   const url =
@@ -65,9 +65,9 @@ async function fetchMultimodel(lat: number, lon: number): Promise<MultimodelResp
   return res.json();
 }
 
-export async function fetchHourlyForecast(lat: number, lon: number): Promise<HourlyForecast> {
+export async function fetchHourlyForecast(lat: number, lon: number, forceRefresh = false): Promise<HourlyForecast> {
   const key = `hourly_${lat.toFixed(2)},${lon.toFixed(2)}`;
-  const cached = getCached<HourlyForecast>(key);
+  const cached = forceRefresh ? null : getCached<HourlyForecast>(key);
   if (cached) return cached;
 
   const data = await fetchMultimodel(lat, lon);
@@ -105,9 +105,9 @@ export async function fetchHourlyForecast(lat: number, lon: number): Promise<Hou
   return result;
 }
 
-export async function fetchDailyForecast(lat: number, lon: number): Promise<DailyForecast> {
+export async function fetchDailyForecast(lat: number, lon: number, forceRefresh = false): Promise<DailyForecast> {
   const key = `daily_${lat.toFixed(2)},${lon.toFixed(2)}`;
-  const cached = getCached<DailyForecast>(key);
+  const cached = forceRefresh ? null : getCached<DailyForecast>(key);
   if (cached) return cached;
 
   const data = await fetchMultimodel(lat, lon);

@@ -67,10 +67,16 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
   const [error, setError] = useState<string | null>(null);
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
+  const [tick, setTick] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
+    if (tick === 0) setLoading(true);
     setError(null);
     callFunction<{ alerts?: WeatherAlertData[]; error?: string }>('weather-alerts', { lat, lon })
       .then((data) => {
@@ -81,6 +87,7 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
         } else {
           setAlerts(data.alerts ?? []);
         }
+        setUpdatedAt(new Date());
       })
       .catch((e: Error) => {
         if (!mounted) return;
@@ -91,11 +98,10 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [lat, lon]);
+  }, [lat, lon, tick]);
 
   const locName = location?.name ?? 'Ratchaburi';
   const [openId, setOpenId] = useState<string | null>(null);
-  const [updatedAt] = useState(() => new Date());
 
   if (loading) {
     return (
@@ -667,12 +673,19 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const lon = location?.longitude ?? 99.9445;
   const [center, setCenter] = useState({ lat, lon });
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [qTick, setQTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setQTick((n) => n + 1), 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => {
     setCenter({ lat, lon });
-    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=1000&minmagnitude=2.5&limit=20&orderby=time`;
-    setLoading(true); setQErr(null);
-    fetch(url).then(r => { if (!r.ok) throw new Error(`USGS: HTTP ${r.status}`); return r.json(); }).then(d => setQuakes(d.features || [])).catch((e: Error) => { console.error(e.message); setQErr(e.message); }).finally(() => setLoading(false));
   }, [lat, lon]);
+  useEffect(() => {
+    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=1000&minmagnitude=2.5&limit=20&orderby=time`;
+    if (qTick === 0) setLoading(true); setQErr(null);
+    fetch(url).then(r => { if (!r.ok) throw new Error(`USGS: HTTP ${r.status}`); return r.json(); }).then(d => setQuakes(d.features || [])).catch((e: Error) => { console.error(e.message); setQErr(e.message); }).finally(() => setLoading(false));
+  }, [lat, lon, qTick]);
   if (loading) return <div className="flex justify-center py-20 text-slate-400"><Loader2 className="animate-spin mr-2" />Loading USGS earthquakes near Ratchaburi...</div>;
   const pins = quakes.map((f) => ({ id: f.id, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], mag: f.properties.mag ?? 0 }));
   return (
@@ -711,13 +724,17 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    setError(null);
-    fetchTropicalStorms()
-      .then((data) => { if (mounted) { setStorms(data); setFetchedAt(Date.now()); } })
-      .catch((e: Error) => { if (mounted) { setError(e.message); setStorms([]); } })
-      .finally(() => { if (mounted) setLoading(false); });
+    const load = () => {
+      setError(null);
+      fetchTropicalStorms()
+        .then((data) => { if (mounted) { setStorms(data); setFetchedAt(Date.now()); } })
+        .catch((e: Error) => { if (mounted) { setError(e.message); setStorms([]); } })
+        .finally(() => { if (mounted) setLoading(false); });
+    };
+    load();
     const t = setInterval(() => setNowTick((n) => n + 1), 30000);
-    return () => { mounted = false; clearInterval(t); };
+    const r = setInterval(load, 5 * 60 * 1000);
+    return () => { mounted = false; clearInterval(t); clearInterval(r); };
   }, []);
 
   const stormsWithDistance = storms
