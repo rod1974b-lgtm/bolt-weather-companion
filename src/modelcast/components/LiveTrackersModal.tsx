@@ -2303,15 +2303,17 @@ const LIGHTNING_REGIONS: RegionConfig[] = [
 
 function decodeBlitzPayload(text: string): string {
   const d = Array.from(text);
+  if (d.length === 0) return '';
   const e = new Map<number, string>();
-  let c = d[0];
-  let f = c;
-  const g = [c];
+  let c: string = d[0]!;
+  let f: string = c;
+  const g: string[] = [c];
   let h = 256;
   let o = h;
   for (let i = 1; i < d.length; i++) {
-    const code = d[i].charCodeAt(0);
-    const a = code < h ? d[i] : (e.has(code) ? e.get(code)! : f + c);
+    const ch = d[i]!;
+    const code = ch.charCodeAt(0);
+    const a: string = code < h ? ch : (e.has(code) ? e.get(code)! : f + c);
     g.push(a);
     c = a.charAt(0);
     e.set(o, f + c);
@@ -2338,7 +2340,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     function connect() {
       if (!isMounted) return;
       try {
-        const srvUrl = servers[srvIdx % servers.length];
+        const srvUrl = servers[srvIdx % servers.length]!;
         ws = new WebSocket(srvUrl);
         ws.onopen = () => {
           if (!isMounted) return;
