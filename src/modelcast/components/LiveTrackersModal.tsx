@@ -296,10 +296,10 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   const yTicks = 5;
 
   const numHours = hours.length;
-  const barSlot = 10;
+  const barSlot = 15;
   const chartW = numHours * barSlot;
   const W = chartW + 50 + 14;
-  const H = 280;
+  const H = 350;
   const padL = 50;
   const padR = 14;
   const padT = 38;
@@ -336,7 +336,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
           <span className="text-xs text-slate-300 font-medium">LIVE &bull; Open-Meteo &bull; {locName}</span>
         </div>
         {lastUpdated && (
-          <span className="text-[10px] text-slate-500 ml-auto">
+          <span className="text-xs text-slate-500 ml-auto">
             Updated {fmtICT(lastUpdated)} ICT &bull; auto-refresh 5min
           </span>
         )}
@@ -356,15 +356,15 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
         <>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-3">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">Right Now</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Right Now</div>
               <div className="mt-1 flex items-baseline gap-1.5">
                 <span className="text-xl font-bold text-sky-300">{currentPrecip.toFixed(1)}</span>
                 <span className="text-xs text-slate-400">mm</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{currentProb}% prob</div>
+              <div className="text-xs text-slate-500 mt-0.5">{currentProb}% prob</div>
             </div>
             <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-3">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">Next Rain</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Next Rain</div>
               {nextRain ? (() => {
                 const mins = Math.max(0, Math.round((new Date(nextRain.time).getTime() - Date.now()) / 60000));
                 return (
@@ -373,23 +373,23 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                       <span className="text-xl font-bold text-sky-300">{nextRain.precip.toFixed(1)}</span>
                       <span className="text-xs text-slate-400">mm &bull; {nextRain.prob}%</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">in {Math.floor(mins / 60)}h {mins % 60}m &bull; {fmtICT(new Date(nextRain.time))} ICT</div>
+                    <div className="text-xs text-slate-500 mt-0.5">in {Math.floor(mins / 60)}h {mins % 60}m &bull; {fmtICT(new Date(nextRain.time))} ICT</div>
                   </div>
                 );
               })() : (
                 <div className="mt-1">
                   <span className="text-base font-bold text-green-400">Clear</span>
-                  <div className="text-[10px] text-slate-500 mt-0.5">No rain in forecast</div>
+                  <div className="text-xs text-slate-500 mt-0.5">No rain in forecast</div>
                 </div>
               )}
             </div>
             <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-3">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wide">3-Day Total</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">3-Day Total</div>
               <div className="mt-1 flex items-baseline gap-1.5">
                 <span className="text-xl font-bold text-sky-300">{totalForecast.toFixed(1)}</span>
                 <span className="text-xs text-slate-400">mm</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">forecast total</div>
+              <div className="text-xs text-slate-500 mt-0.5">forecast total</div>
             </div>
           </div>
 
@@ -412,7 +412,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
           <div className="rounded-2xl border border-slate-700/50 bg-[#1a2332]/90 p-4">
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="text-white font-bold text-sm">Estimated Precipitation &bull; {locName}</h3>
-              <div className="flex items-center gap-3 text-[10px] text-slate-400 flex-wrap">
+              <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#60a5fa' }} /> Light &lt;2.5</span>
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#2563eb' }} /> Mod 2.5-7.5</span>
                 <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#1e3a8a' }} /> Heavy &gt;7.5</span>
@@ -427,7 +427,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   return (
                     <g key={i}>
                       <rect x={x1} y={padT} width={x2 - x1} height={plotH} fill={i % 2 === 0 ? 'rgba(30,41,59,0.35)' : 'rgba(30,41,59,0.12)'} />
-                      <text x={(x1 + x2) / 2} y={padT - 10} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 11, fontWeight: 600 }}>{dg.label}</text>
+                      <text x={(x1 + x2) / 2} y={padT - 10} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 13, fontWeight: 600 }}>{dg.label}</text>
                       {i > 0 && <line x1={x1} y1={padT} x2={x1} y2={padT + plotH} stroke="#334155" strokeWidth={0.5} strokeDasharray="2 3" />}
                     </g>
                   );
@@ -439,12 +439,12 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   return (
                     <g key={i}>
                       <line x1={padL} y1={y} x2={padL + chartW} y2={y} stroke="#334155" strokeWidth={0.4} strokeDasharray="3 4" />
-                      <text x={padL - 8} y={y + 3.5} textAnchor="end" className="fill-slate-500" style={{ fontSize: 10 }}>{val}</text>
+                      <text x={padL - 8} y={y + 3.5} textAnchor="end" className="fill-slate-500" style={{ fontSize: 12 }}>{val}</text>
                     </g>
                   );
                 })}
 
-                <text x={14} y={padT + plotH / 2} textAnchor="middle" transform={`rotate(-90 14 ${padT + plotH / 2})`} className="fill-slate-500" style={{ fontSize: 10 }}>mm</text>
+                <text x={14} y={padT + plotH / 2} textAnchor="middle" transform={`rotate(-90 14 ${padT + plotH / 2})`} className="fill-slate-500" style={{ fontSize: 12 }}>mm</text>
 
                 {hours.map((h, i) => {
                   const barH = h.precip > 0 ? Math.max(1.5, (h.precip / yMax) * plotH) : 0;
@@ -460,9 +460,9 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                       <rect x={padL + i * barSlot} y={padT} width={barSlot} height={plotH} fill="transparent" />
                       <rect x={bx} y={by} width={bw} height={barH} rx={0.5} fill={precipBarColor(h.precip)} opacity={h.isPast ? 0.5 : 0.9} stroke={isPeak ? '#fbbf24' : undefined} strokeWidth={isPeak ? 1.5 : undefined} />
                       {isPeak ? (
-                        <text x={padL + i * barSlot + barSlot / 2} y={by - 4} textAnchor="middle" fill="#fbbf24" style={{ fontSize: 9, fontWeight: 700 }}>Peak {h.precip.toFixed(1)}</text>
+                        <text x={padL + i * barSlot + barSlot / 2} y={by - 4} textAnchor="middle" fill="#fbbf24" style={{ fontSize: 12, fontWeight: 700 }}>Peak {h.precip.toFixed(1)}</text>
                       ) : h.precip > 0.5 && h.prob > 20 ? (
-                        <text x={padL + i * barSlot + barSlot / 2} y={by - 3} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 7 }}>{h.prob}%</text>
+                        <text x={padL + i * barSlot + barSlot / 2} y={by - 3} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 10, fontWeight: 700 }}>{h.prob}%</text>
                       ) : null}
                     </g>
                   );
@@ -472,14 +472,14 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   <g>
                     <line x1={xForIdx(nowIdx)} y1={padT - 4} x2={xForIdx(nowIdx)} y2={padT + plotH} stroke="#f97316" strokeWidth={1.2} strokeDasharray="4 3" />
                     <rect x={xForIdx(nowIdx) - 14} y={padT - 18} width={28} height={13} rx={3} fill="#f97316" />
-                    <text x={xForIdx(nowIdx)} y={padT - 8} textAnchor="middle" fill="#fff" style={{ fontSize: 9, fontWeight: 700 }}>Now</text>
+                    <text x={xForIdx(nowIdx)} y={padT - 8} textAnchor="middle" fill="#fff" style={{ fontSize: 11, fontWeight: 700 }}>Now</text>
                   </g>
                 )}
 
                 {hours.map((h, i) => {
                   if (h.hour % 6 !== 0) return null;
                   return (
-                    <text key={i} x={padL + i * barSlot + barSlot / 2} y={H - 8} textAnchor="middle" className="fill-slate-500" style={{ fontSize: 9 }}>
+                    <text key={i} x={padL + i * barSlot + barSlot / 2} y={H - 8} textAnchor="middle" className="fill-slate-500" style={{ fontSize: 12 }}>
                       {String(h.hour).padStart(2, '0')}:00
                     </text>
                   );
@@ -488,7 +488,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
             </div>
           </div>
 
-          <div className="text-[10px] text-slate-500 px-1 flex items-center gap-2">
+          <div className="text-xs text-slate-500 px-1 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             Live precipitation from Open-Meteo &bull; hourly resolution &bull; 3-day forecast &bull; auto-refreshes every 5 minutes
           </div>
