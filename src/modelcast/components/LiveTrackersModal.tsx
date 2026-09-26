@@ -2396,7 +2396,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     if (found && region === 'nearby') {
       return { ...found, center: { lat: userLat, lon: userLon } };
     }
-    return found ?? LIGHTNING_REGIONS[0]!;
+    return (found ?? LIGHTNING_REGIONS[0]) as NonNullable<typeof found>;
   }, [region, userLat, userLon]);
 
   const regionalStrikes = useMemo(() => {
