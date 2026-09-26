@@ -296,10 +296,10 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   const yTicks = 5;
 
   const numHours = hours.length;
-  const barSlot = 7;
+  const barSlot = 10;
   const chartW = numHours * barSlot;
   const W = chartW + 50 + 14;
-  const H = 320;
+  const H = 280;
   const padL = 50;
   const padR = 14;
   const padT = 38;
@@ -475,7 +475,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
 
           <div className="text-[10px] text-slate-500 px-1 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Live precipitation from Open-Meteo &bull; hourly resolution &bull; 1 day past + 3 day forecast &bull; auto-refreshes every 5 minutes
+            Live precipitation from Open-Meteo &bull; hourly resolution &bull; 3-day forecast &bull; auto-refreshes every 5 minutes
           </div>
         </>
       )}
