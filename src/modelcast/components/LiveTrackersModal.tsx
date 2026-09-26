@@ -377,7 +377,6 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                   </div>
                 );
               })() : (
-              ) : (
                 <div className="mt-1">
                   <span className="text-base font-bold text-green-400">Clear</span>
                   <div className="text-[10px] text-slate-500 mt-0.5">No rain in forecast</div>
@@ -392,6 +391,13 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">forecast total</div>
             </div>
+          </div>
+
+          <div className="text-xs text-slate-300 px-1">
+            {dayGroups.slice(0, 3).map((dg, i) => {
+              const sum = hours.slice(dg.startIdx, dg.endIdx + 1).reduce((s, h) => s + h.precip, 0);
+              return <span key={dg.dateKey}>{i > 0 && ' • '}{['Today', 'Tomo', 'Day3'][i]} <b className="text-sky-300">{sum.toFixed(1)}mm</b></span>;
+            })}
           </div>
 
           <div className={`rounded-lg px-3 py-2 text-xs flex items-center gap-2 border ${totalForecast > 100 ? 'bg-red-500/10 border-red-500/40 text-red-200' : 'bg-slate-800/60 border-slate-700/50 text-slate-300'}`}>
