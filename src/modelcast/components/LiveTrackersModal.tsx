@@ -1,6 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
-import { callFunction, supabaseUrl, supabaseAnonKey } from '@/modelcast/lib/supabase';
+import { callFunction, supabaseUrl, supabaseAnonKey, FunctionHttpError } from '@/modelcast/lib/supabase';
+
+async function fetchLightningStrikes(bbox?: [number, number, number, number]) {
+  const [lonMin, latMin, lonMax, latMax] = bbox ?? [-180, -90, 180, 90];
+  const payload = await callFunction<{ strikes?: { lat: number; lon: number; time?: number }[] }>(
+    'lightning-proxy',
+    { latMin, latMax, lonMin, lonMax },
+  );
+  return payload?.strikes ?? [];
+}
 import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/modelcast/lib/liveTrackers';
 import type { TropicalStorm } from '@/modelcast/lib/liveTrackers';
 import { X, Satellite, Wind, Zap, ExternalLink, Loader2, AlertTriangle, Clock, CheckCircle2, Info } from 'lucide-react';
@@ -10,7 +19,7 @@ type LightningRegion = 'nearby' | 'asia' | 'europe' | 'americas' | 'global';
 
 type EarthquakeFeature = {
   id: string;
-  properties: { place?: string; mag?: number; time?: number };
+  properties: { place?: string | undefined; mag?: number; time?: number };
   geometry: { coordinates: [number, number, number] };
 };
 
@@ -1378,7 +1387,7 @@ function OsmMiniMap({
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
   radiusKm: number;
-  pins: { id: string; lat: number; lon: number; mag: number; place?: string }[];
+  pins: { id: string; lat: number; lon: number; mag: number; place?: string | undefined }[];
   selectedId: string | null;
   onPin: (id: string) => void;
   zoom: number;
@@ -2648,7 +2657,7 @@ export function LiveTrackersModal({ open, onClose, location, hourly }: { open: b
           {tab === 'satellite' && <SatelliteTracker />}
           {tab === 'earthquake' && <EarthquakeTracker location={location} />}
           {tab === 'hurricane' && <HurricaneTracker location={location} />}
-          {tab === 'lightning' && <LightningTracker location={location} />}
+          {tab === 'lightning' && <LightningTracker userLat={location?.latitude ?? 13.54} userLon={location?.longitude ?? 99.82} />}
         </div>
       </div>
     </div>
