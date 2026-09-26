@@ -2461,7 +2461,10 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
 
   const userPoint = strikePos(userLat, userLon);
   const mpp = (156543.03 * Math.cos((userLat * Math.PI) / 180)) / n;
-
+const REGION_DOTS: Record<string, {name:string; lat:number; lon:number}[]> = {
+americas: [{name:'Great Plains',lat:38,lon:-98},{name:'Gulf',lat:25,lon:-90},{name:'Amazon',lat:-5,lon:-62},{name:'Andes',lat:-20,lon:-68}],
+global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java Sea',lat:-5,lon:112}],
+};
   return (
     <div className="space-y-4">
       {region === 'nearby' ? (
