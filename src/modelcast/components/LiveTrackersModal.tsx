@@ -2510,7 +2510,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             </span>
           </div>
         )
-           ) : (
+      ) : (
         <div className="p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 backdrop-blur flex items-center justify-between">
           <div>
             <span className="text-sm font-bold text-white uppercase tracking-wide block">
@@ -2524,8 +2524,8 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             {regionalStrikes.length} strikes
           </span>
         </div>
-             </div>
-      )}          </div>
+      )}          
+               </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
             {regionalStrikes.length} strikes
           </span>
