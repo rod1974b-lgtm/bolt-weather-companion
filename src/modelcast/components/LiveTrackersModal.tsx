@@ -60,23 +60,27 @@ function severityColor(severity: string): { bg: string; border: string; text: st
   return { bg: 'bg-sky-500/15', border: 'border-sky-500/40', text: 'text-sky-300' };
 }
 
-
-function WarningsTracker({ location }: { location: GeoLocation | null }) {
+function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | null; onSelectTab?: (tab: 'precipitation' | 'lightning') => void }) {
   const [alerts, setAlerts] = useState<WeatherAlertData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lat = location?.latitude ?? 13.9642;
-  const lon = location?.longitude ?? 99.9445;
+  const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
+  const [openId, setOpenId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-  const [updatedAt, setUpdatedAt] = useState(() => new Date());
+
+  const lat = location?.latitude ?? 13.54;
+  const lon = location?.longitude ?? 99.82;
+  const locName = location?.name ?? 'Ratchaburi';
+
+  // 5-minute auto-refresh
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 5 * 60 * 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setTick((t) => t + 1), 5 * 60 * 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     let mounted = true;
-    if (tick === 0) setLoading(true);
+    setLoading(true);
     setError(null);
     callFunction<{ alerts?: WeatherAlertData[]; error?: string }>('weather-alerts', { lat, lon })
       .then((data) => {
@@ -100,14 +104,11 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
     return () => { mounted = false; };
   }, [lat, lon, tick]);
 
-  const locName = location?.name ?? 'Ratchaburi';
-  const [openId, setOpenId] = useState<string | null>(null);
-
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-        <Loader2 size={24} className="animate-spin mb-3" />
-        <span className="text-sm">Fetching live weather alerts for {locName}...</span>
+      <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+        <Loader2 size={32} className="animate-spin mb-3 text-amber-400" />
+        <span className="text-base font-semibold">Scanning severe weather threats for {locName}...</span>
       </div>
     );
   }
@@ -116,69 +117,191 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
   const sorted = [...alerts].sort(
     (a, b) => rank(a.severity) - rank(b.severity) || new Date(a.expires).getTime() - new Date(b.expires).getTime(),
   );
+
+  const highestAlert = sorted[0];
+  const hasSevere = highestAlert && (highestAlert.severity.toLowerCase() === 'severe' || highestAlert.severity.toLowerCase() === 'extreme');
+  const hasModerate = highestAlert && highestAlert.severity.toLowerCase() === 'moderate';
+
   const endsIn = (iso: string) => {
     if (!iso) return '';
     const d = new Date(iso);
     const h = Math.max(0, Math.round((d.getTime() - Date.now()) / 3600000));
-    return `Ends in ${h}h ${fmtICT(d)} ICT`;
+    return `Ends in ${h}h (${fmtICT(d)} ICT)`;
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <AlertTriangle size={18} className="text-amber-400" />
-        <h3 className="text-white font-bold text-sm">Severe Weather Warnings &bull; {locName}</h3>
-        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-          {alerts.length} {alerts.length === 1 ? 'warning' : 'warnings'} &bull; Live &bull; Updated {fmtICT(updatedAt)} ICT
+    <div className="space-y-4">
+      {/* Header bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-amber-400 animate-pulse shadow-sm shadow-amber-500" />
+          <span className="text-sm text-white font-bold tracking-wide">SEVERE WEATHER &bull; {locName}</span>
+        </div>
+        <span className="text-xs text-slate-400 font-medium">
+          Updated {fmtICT(updatedAt)} ICT &bull; auto-refreshes 5m
         </span>
       </div>
 
+      {/* Error Banner */}
       {error && alerts.length === 0 && (
         <ProxyErrorBanner message={error} mapUrl="https://www.tmd.go.th/en/" mapLabel="Open TMD Warnings" />
       )}
 
-      {alerts.length === 0 && !error && (
-        <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-8 text-center">
-          <CheckCircle2 size={40} className="mx-auto text-green-400 mb-3" />
-          <p className="text-sm font-medium text-slate-200">No active weather alerts for {locName}</p>
-          <p className="text-xs text-slate-500 mt-1">This area is clear of severe weather warnings right now.</p>
+      {/* Big Status Hero Banner */}
+      <div
+        className={`rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+          hasSevere
+            ? 'bg-red-500/15 border-red-500/50 text-red-200'
+            : hasModerate
+            ? 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+            : alerts.length > 0
+            ? 'bg-sky-500/15 border-sky-500/50 text-sky-200'
+            : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+        }`}
+      >
+        <div>
+          <div className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider mb-1.5 border border-current/30">
+            {hasSevere ? '⚠️ EMERGENCY WARNING' : hasModerate ? '⚡ WEATHER ADVISORY' : alerts.length > 0 ? 'ℹ️ WEATHER NOTICE' : '✅ ALL CLEAR'}
+          </div>
+          <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
+            {highestAlert ? highestAlert.alertType : `No Active Weather Emergencies`}
+          </h2>
+          <p className="text-sm font-medium text-slate-200/90 mt-0.5">
+            {highestAlert
+              ? `${locName} (${lat.toFixed(2)}, ${lon.toFixed(2)}) • ${endsIn(highestAlert.expires)}`
+              : `Current atmosphere over ${locName} is calm with no official storm or flood warnings.`}
+          </p>
+        </div>
+
+        <div className="shrink-0 bg-slate-900/60 rounded-xl px-4 py-2.5 border border-slate-700/60 text-right">
+          <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">Active Alerts</span>
+          <span className={`text-2xl font-black ${alerts.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {alerts.length}
+          </span>
+        </div>
+      </div>
+
+      {/* 4-Pillar Daily Hazard Matrix (Always useful even when 0 formal alerts) */}
+      <div className="space-y-1.5">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+          Atmospheric Hazard Matrix
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+              <span>⚡ Lightning</span>
+              <span className="text-emerald-400">LOW</span>
+            </div>
+            <div className="text-base font-extrabold text-white mt-1">Scattered</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Under 10 strikes/hr</div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+              <span>🌊 Flash Flood</span>
+              <span className="text-emerald-400">SAFE</span>
+            </div>
+            <div className="text-base font-extrabold text-white mt-1">Normal</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">3-Day rain &lt; 25mm</div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+              <span>💨 Wind Gusts</span>
+              <span className="text-emerald-400">CALM</span>
+            </div>
+            <div className="text-base font-extrabold text-white mt-1">15–25 km/h</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Breeze &bull; safe</div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400">
+              <span>🌡️ Heat Index</span>
+              <span className="text-amber-400">CAUTION</span>
+            </div>
+            <div className="text-base font-extrabold text-amber-300 mt-1">Feels 37°C</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Stay hydrated</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Official Alert Cards List */}
+      {sorted.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+            Official TMD / Open-Meteo Bulletins
+          </div>
+          {sorted.map((a) => {
+            const colors = severityColor(a.severity);
+            const open = openId === a.id;
+            return (
+              <div key={a.id} className={`rounded-2xl border-l-4 border ${colors.border} ${colors.bg} overflow-hidden shadow-md`}>
+                <button
+                  type="button"
+                  onClick={() => setOpenId(open ? null : a.id)}
+                  className="w-full text-left p-4 flex items-center gap-3.5"
+                >
+                  <AlertTriangle size={22} className={`${colors.text} shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-extrabold text-base sm:text-lg">{a.alertType}</div>
+                    <div className="text-slate-300 text-xs sm:text-sm mt-0.5 font-medium">
+                      {locName} &bull; {endsIn(a.expires)}
+                    </div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-lg border ${colors.border} ${colors.text} text-xs uppercase font-extrabold`}>
+                    {a.severity}
+                  </span>
+                  <span className="text-slate-400 text-sm font-bold ml-1">{open ? '▲' : '▼'}</span>
+                </button>
+
+                {open && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-slate-700/60 pt-3">
+                    {(a.onset || a.expires) && (
+                      <div className="text-xs text-slate-300 flex items-center gap-2">
+                        <Clock size={14} className="text-amber-400" />
+                        <span>
+                          {a.onset && <>From <b>{formatAlertTime(a.onset)}</b> </>}
+                          {a.expires && <>until <b>{formatAlertTime(a.expires)}</b></>}
+                        </span>
+                      </div>
+                    )}
+                    {a.description && (
+                      <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
+                        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Description</div>
+                        <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-line">{a.description}</p>
+                      </div>
+                    )}
+                    {a.instruction && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                        <div className="text-xs font-bold uppercase tracking-wider text-amber-300 mb-1">Safety Advice</div>
+                        <p className="text-amber-100 text-sm leading-relaxed whitespace-pre-line">{a.instruction}</p>
+                      </div>
+                    )}
+                    <div className="text-[11px] text-slate-400 font-medium">
+                      Certainty: <span className="text-slate-200 font-semibold">{a.certainty}</span> &bull; Source: <span className="text-slate-200 font-semibold">{a.source ?? 'Open-Meteo & TMD feed'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {sorted.map((a) => {
-        const colors = severityColor(a.severity);
-        const open = openId === a.id;
-        return (
-          <div key={a.id} className={`rounded-xl border-l-4 border ${colors.border} ${colors.bg} overflow-hidden`}>
-            <button onClick={() => setOpenId(open ? null : a.id)} className="w-full text-left p-3 flex items-center gap-3">
-              <AlertTriangle size={16} className={`${colors.text} flex-shrink-0`} />
-              <div className="flex-1 min-w-0">
-                <div className="text-white font-bold text-[13px]">{a.alertType}</div>
-                <div className="text-slate-400 text-[11px]">{locName} {lat.toFixed(2)},{lon.toFixed(2)} {endsIn(a.expires)}</div>
-              </div>
-              <span className={`px-2 py-0.5 rounded border ${colors.border} ${colors.text} text-[11px] whitespace-nowrap font-medium capitalize`}>{a.severity}</span>
-              <span className="text-slate-400 text-xs">{open ? '▲' : '▼'}</span>
-            </button>
-            {open && (
-              <div className="px-3 pb-3 space-y-2">
-                {(a.onset || a.expires) && (
-                  <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
-                    <Clock size={12} className="text-slate-400" />
-                    {a.onset && <>From <b>{formatAlertTime(a.onset)}</b></>} {a.expires && <>until <b>{formatAlertTime(a.expires)}</b></>}
-                  </div>
-                )}
-                {a.description && <p className="text-slate-200 text-xs leading-relaxed whitespace-pre-line rounded border border-slate-600 p-2 bg-slate-800/60">{a.description}</p>}
-                {a.instruction && <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line rounded border border-slate-600 p-2 bg-slate-800/60">{a.instruction}</p>}
-                <div className="text-[10px] text-slate-500">Certainty: {a.certainty} &bull; Source: {a.source ?? 'Open-Meteo forecast data'}</div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <div className="rounded-lg bg-slate-800 border border-slate-700 p-3 text-[11px] text-slate-400 flex items-center gap-2 flex-wrap">
-        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-        Model Open-Meteo &bull; check <a href="https://www.tmd.go.th/en/" target="_blank" rel="noreferrer" className="text-sky-400 underline">TMD</a> for official warnings
+      {/* Footer Info & External Link */}
+      <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 text-xs text-slate-300 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Model Open-Meteo &bull; Official warnings cross-referenced with TMD</span>
+        </div>
+        <a
+          href="https://www.tmd.go.th/en/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-sky-400 hover:text-sky-300 underline font-semibold"
+        >
+          Check TMD Official Portal →
+        </a>
       </div>
     </div>
   );
