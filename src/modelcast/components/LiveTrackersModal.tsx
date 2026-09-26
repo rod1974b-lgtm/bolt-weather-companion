@@ -1356,51 +1356,149 @@ function worldPx(lat: number, lon: number, z: number): { x: number; y: number } 
   return { x: ((lon + 180) / 360) * n, y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n };
 }
 
-/** Minimal OpenStreetMap tile map (no dependencies). */
-function OsmMiniMap({ center, home, radiusKm, pins, selectedId, onPin, height = 300, zoom = 4 }: {
+function quakeColor(mag: number) {
+  if (mag >= 6.0) return { bg: 'bg-red-500', text: 'text-red-300', border: 'border-red-500', ring: 'ring-red-400', label: 'STRONG' };
+  if (mag >= 5.0) return { bg: 'bg-orange-500', text: 'text-orange-300', border: 'border-orange-500', ring: 'ring-orange-400', label: 'MODERATE' };
+  if (mag >= 4.0) return { bg: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-500', ring: 'ring-amber-400', label: 'LIGHT' };
+  return { bg: 'bg-sky-500', text: 'text-sky-300', border: 'border-sky-500', ring: 'ring-sky-400', label: 'MINOR' };
+}
+
+/** Interactive OpenStreetMap tile map with zoom & pin inspector. */
+function OsmMiniMap({
+  center,
+  home,
+  radiusKm,
+  pins,
+  selectedId,
+  onPin,
+  zoom,
+  onZoomChange,
+  height = 340,
+}: {
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
   radiusKm: number;
-  pins: { id: string; lat: number; lon: number; mag: number }[];
+  pins: { id: string; lat: number; lon: number; mag: number; place?: string }[];
   selectedId: string | null;
   onPin: (id: string) => void;
+  zoom: number;
+  onZoomChange: (newZoom: number) => void;
   height?: number;
-  zoom?: number;
 }) {
   const c = worldPx(center.lat, center.lon, zoom);
   const n = 2 ** zoom;
   const tx0 = Math.floor(c.x / TILE);
   const ty0 = Math.floor(c.y / TILE);
   const tiles: { key: string; x: number; y: number; url: string }[] = [];
+
   for (let dx = -4; dx <= 4; dx++) {
     for (let dy = -2; dy <= 2; dy++) {
       const ty = ty0 + dy;
       if (ty < 0 || ty >= n) continue;
       const tx = tx0 + dx;
       const wx = ((tx % n) + n) % n;
-      tiles.push({ key: `${tx}-${ty}`, x: tx * TILE - c.x, y: ty * TILE - c.y, url: `https://tile.openstreetmap.org/${zoom}/${wx}/${ty}.png` });
+      tiles.push({
+        key: `${tx}-${ty}`,
+        x: tx * TILE - c.x,
+        y: ty * TILE - c.y,
+        url: `https://tile.openstreetmap.org/${zoom}/${wx}/${ty}.png`,
+      });
     }
   }
-  const pos = (lat: number, lon: number) => { const p = worldPx(lat, lon, zoom); return { x: p.x - c.x, y: p.y - c.y }; };
+
+  const pos = (lat: number, lon: number) => {
+    const p = worldPx(lat, lon, zoom);
+    return { x: p.x - c.x, y: p.y - c.y };
+  };
+
   const h = pos(home.lat, home.lon);
   const mpp = (156543.03 * Math.cos((home.lat * Math.PI) / 180)) / n;
   const rPx = (radiusKm * 1000) / mpp;
   const at = (p: { x: number; y: number }) => ({ left: `calc(50% + ${p.x}px)`, top: `calc(50% + ${p.y}px)` });
+
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-800" style={{ height }}>
+    <div className="relative w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-md" style={{ height }}>
       {tiles.map((t) => (
-        <img key={t.key} src={t.url} alt="" draggable={false} className="absolute max-w-none select-none" style={{ ...at(t), width: TILE, height: TILE }} />
+        <img
+          key={t.key}
+          src={t.url}
+          alt=""
+          draggable={false}
+          className="absolute max-w-none select-none"
+          style={{ ...at(t), width: TILE, height: TILE }}
+        />
       ))}
-      <div className="absolute rounded-full border-2 border-sky-500 bg-sky-500/10 pointer-events-none" style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }} />
-      <div className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full bg-blue-600 border-2 border-white shadow" style={at(h)} title="Ratchaburi" />
+
+      {/* Radius boundary ring */}
+      <div
+        className="absolute rounded-full border-2 border-sky-400/80 bg-sky-500/10 pointer-events-none transition-all duration-300"
+        style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }}
+      />
+
+      {/* Home Location Marker (Ratchaburi) */}
+      <div
+        className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
+        style={at(h)}
+        title="Ratchaburi Location"
+      >
+        <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
+      </div>
+
+      {/* Earthquake Epicenter Pins */}
       {pins.map((p) => {
-        const size = Math.max(10, Math.min(24, p.mag * 4));
+        const size = Math.max(14, Math.min(28, p.mag * 4.5));
         const sel = p.id === selectedId;
+        const color = quakeColor(p.mag);
+
         return (
-          <button key={p.id} onClick={() => onPin(p.id)} title={`M${p.mag}`} className={`absolute rounded-full border-2 ${sel ? 'border-white bg-red-500 z-10' : 'border-red-900 bg-orange-500/80'}`} style={{ ...at(pos(p.lat, p.lon)), width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2 }} />
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPin(p.id)}
+            title={`M${p.mag} • ${p.place ?? 'Earthquake'}`}
+            className={`absolute rounded-full transition-transform cursor-pointer flex items-center justify-center font-black text-[10px] text-white shadow-lg ${
+              sel
+                ? 'ring-4 ring-white z-20 scale-125 ' + color.bg
+                : color.bg + ' border border-white/80 hover:scale-110 z-10'
+            }`}
+            style={{
+              ...at(pos(p.lat, p.lon)),
+              width: size,
+              height: size,
+              marginLeft: -size / 2,
+              marginTop: -size / 2,
+            }}
+          >
+            {p.mag >= 4.5 ? p.mag.toFixed(1) : ''}
+          </button>
         );
       })}
-      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-white/80 text-[9px] text-slate-700">© OpenStreetMap contributors</div>
+
+      {/* Map Controls (+ / - / Reset) */}
+      <div className="absolute top-2.5 right-2.5 z-20 flex flex-col gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-md">
+        <button
+          type="button"
+          onClick={() => onZoomChange(Math.min(7, zoom + 1))}
+          disabled={zoom >= 7}
+          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-base disabled:opacity-40"
+          title="Zoom In"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => onZoomChange(Math.max(3, zoom - 1))}
+          disabled={zoom <= 3}
+          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-base disabled:opacity-40"
+          title="Zoom Out"
+        >
+          −
+        </button>
+      </div>
+
+      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-slate-900/80 text-[9px] text-slate-300">
+        &copy; OpenStreetMap contributors
+      </div>
     </div>
   );
 }
@@ -1410,44 +1508,369 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const [loading, setLoading] = useState(true);
   const [qErr, setQErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [radiusKm, setRadiusKm] = useState<number>(1000); // 300km, 1000km, 2000km
+  const [minMag, setMinMag] = useState<number>(2.5); // 2.5, 4.0, 5.0
+  const [zoom, setZoom] = useState<number>(4);
+
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
+  const locName = location?.name ?? 'Ratchaburi';
   const [center, setCenter] = useState({ lat, lon });
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [qTick, setQTick] = useState(0);
+
+  // 5-minute auto-refresh
   useEffect(() => {
     const t = setInterval(() => setQTick((n) => n + 1), 5 * 60 * 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Recenter map if location or radius changes
   useEffect(() => {
     setCenter({ lat, lon });
-  }, [lat, lon]);
+    if (radiusKm <= 300) setZoom(6);
+    else if (radiusKm <= 1000) setZoom(4);
+    else setZoom(3);
+  }, [lat, lon, radiusKm]);
+
+  // Fetch earthquakes from USGS API
   useEffect(() => {
-    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=1000&minmagnitude=2.5&limit=20&orderby=time`;
-    if (qTick === 0) setLoading(true); setQErr(null);
-    fetch(url).then(r => { if (!r.ok) throw new Error(`USGS: HTTP ${r.status}`); return r.json(); }).then(d => setQuakes(d.features || [])).catch((e: Error) => { console.error(e.message); setQErr(e.message); }).finally(() => setLoading(false));
-  }, [lat, lon, qTick]);
-  if (loading) return <div className="flex justify-center py-20 text-slate-400"><Loader2 className="animate-spin mr-2" />Loading USGS earthquakes near Ratchaburi...</div>;
-  const pins = quakes.map((f) => ({ id: f.id, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], mag: f.properties.mag ?? 0 }));
+    let mounted = true;
+    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=${radiusKm}&minmagnitude=${minMag}&limit=30&orderby=time`;
+
+    if (qTick === 0) setLoading(true);
+    setQErr(null);
+
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`USGS Seismology: HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        if (!mounted) return;
+        setQuakes(d.features || []);
+      })
+      .catch((e: Error) => {
+        if (!mounted) return;
+        setQErr(e.message);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [lat, lon, radiusKm, minMag, qTick]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+        <Loader2 size={32} className="animate-spin mb-3 text-sky-400" />
+        <span className="text-base font-semibold">Scanning USGS seismic network around {locName}...</span>
+      </div>
+    );
+  }
+
+  // Calculate distances & assess feelable threat to Ratchaburi
+  const quakesWithDist = quakes.map((f) => {
+    const qLat = f.geometry.coordinates[1];
+    const qLon = f.geometry.coordinates[0];
+    const depthKm = f.geometry.coordinates[2];
+    const dist = Math.round(haversineKm(lat, lon, qLat, qLon));
+    const mag = f.properties.mag ?? 0;
+    const tsunami = (f.properties as { tsunami?: number }).tsunami === 1;
+
+    // Estimate shaking intensity: close moderate quakes or strong regional quakes
+    const isFelt = (mag >= 5.0 && dist <= 500) || (mag >= 6.0 && dist <= 1200) || (mag >= 4.0 && dist <= 150);
+
+    return {
+      ...f,
+      dist,
+      depthKm,
+      mag,
+      tsunami,
+      isFelt,
+    };
+  });
+
+  const selectedQuake = quakesWithDist.find((q) => q.id === selected);
+  const tsunamiEvent = quakesWithDist.find((q) => q.tsunami);
+  const highestFelt = quakesWithDist.find((q) => q.isFelt);
+  const strongest = [...quakesWithDist].sort((a, b) => b.mag - a.mag)[0];
+
+  const pins = quakesWithDist.map((f) => ({
+    id: f.id,
+    lat: f.geometry.coordinates[1],
+    lon: f.geometry.coordinates[0],
+    mag: f.mag,
+    place: f.properties.place,
+  }));
+
+  const handleSelectPin = (id: string) => {
+    setSelected(id);
+    const target = quakesWithDist.find((q) => q.id === id);
+    if (target) {
+      setCenter({ lat: target.geometry.coordinates[1], lon: target.geometry.coordinates[0] });
+    }
+    rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
   return (
-    <div className="space-y-3">
-      <div className="text-[11px] text-slate-400 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500" />USGS live - 1000km around Ratchaburi - M2.5+</div>
-      <OsmMiniMap center={center} home={{ lat, lon }} radiusKm={1000} pins={pins} selectedId={selected} onPin={(id) => { setSelected(id); rowRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />
-      {qErr && <ProxyErrorBanner message={qErr} mapUrl="https://earthquake.usgs.gov/earthquakes/map/" mapLabel="Open USGS Map" />}
-      {!qErr && quakes.length === 0 && <div className="text-center text-slate-400 text-sm py-10">✓ No earthquakes &gt;2.5 within 1000km recently - Ratchaburi area clear</div>}
-      <div className="space-y-2 max-h-[360px] overflow-y-auto">
-        {quakes.map((f) => {
-          const qLat = f.geometry.coordinates[1];
-          const qLon = f.geometry.coordinates[0];
-          const dist = Math.round(haversineKm(lat, lon, qLat, qLon));
-          const sel = selected === f.id;
-          return (
-            <div key={f.id} ref={(el) => { rowRefs.current[f.id] = el; }} onClick={() => { setSelected(f.id); setCenter({ lat: qLat, lon: qLon }); }} className={`cursor-pointer flex items-center justify-between p-3 rounded-xl bg-slate-800 border ${sel ? 'border-sky-400' : 'border-slate-700 hover:border-slate-600'}`}>
-              <div><div className="text-sm text-white font-medium">{f.properties.place}</div><div className="text-xs text-slate-400">M {f.properties.mag} • {dist.toLocaleString()} km from Ratchaburi • {fmtAgo(f.properties.time ?? 0)} • {f.geometry.coordinates[2]}km deep</div></div>
-              <a href={`https://earthquake.usgs.gov/earthquakes/eventpage/${f.id}`} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-white p-2"><ExternalLink size={16} /></a>
+    <div className="space-y-3.5 select-none">
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500" />
+          <span className="text-sm text-white font-bold tracking-wide">
+            SEISMIC &amp; TSUNAMI MONITOR &bull; {locName.toUpperCase()}
+          </span>
+        </div>
+        <span className="text-xs text-slate-400 font-medium">
+          USGS Live Feed &bull; Auto-refreshes 5m
+        </span>
+      </div>
+
+      {/* Error Banner */}
+      {qErr && (
+        <ProxyErrorBanner
+          message={qErr}
+          mapUrl="https://earthquake.usgs.gov/earthquakes/map/"
+          mapLabel="Open USGS Global Map"
+        />
+      )}
+
+      {/* "Did We Feel It?" Threat Status Hero Banner */}
+      <div
+        className={`rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md ${
+          tsunamiEvent
+            ? 'bg-rose-500/15 border-rose-500/50 text-rose-200'
+            : highestFelt
+            ? 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+            : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+        }`}
+      >
+        <div>
+          <div className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider mb-1.5 border border-current/30">
+            {tsunamiEvent
+              ? '🌊 TSUNAMI ADVISORY'
+              : highestFelt
+              ? '⚠️ NOTICED IN CENTRAL THAILAND'
+              : '✅ SEISMICALLY CALM'}
+          </div>
+          <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
+            {tsunamiEvent
+              ? `Tsunami Bulletin: M${tsunamiEvent.mag} ${tsunamiEvent.properties.place}`
+              : highestFelt
+              ? `M${highestFelt.mag} ${highestFelt.properties.place} (${highestFelt.dist} km)`
+              : `No Noticeable Earthquakes in ${locName}`}
+          </h2>
+          <p className="text-sm font-medium text-slate-200/90 mt-0.5">
+            {highestFelt
+              ? `Tremor may have caused high-rise swaying in Central Thailand. Epicenter ${highestFelt.dist} km away.`
+              : strongest
+              ? `Nearest recent activity: M${strongest.mag} near ${strongest.properties.place} (${strongest.dist} km away, safe).`
+              : `Atmospheric and crustal activity within ${radiusKm} km is completely stable.`}
+          </p>
+        </div>
+
+        <div className="shrink-0 bg-slate-900/70 rounded-xl px-4 py-2.5 border border-slate-700/60 text-right">
+          <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">Detected Events</span>
+          <span className={`text-2xl font-black ${quakesWithDist.length > 0 ? 'text-sky-300' : 'text-emerald-400'}`}>
+            {quakesWithDist.length}
+          </span>
+        </div>
+      </div>
+
+      {/* Scope & Magnitude Filter Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-900/90 p-2.5 rounded-2xl border border-slate-800 shadow-sm">
+        {/* Radius Pills */}
+        <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
+          <span className="text-xs font-bold text-slate-400 px-2">Scope:</span>
+          {[
+            { id: 300, label: 'Local (300 km)' },
+            { id: 1000, label: 'Regional (1,000 km)' },
+            { id: 2000, label: 'Wide (2,000 km)' },
+          ].map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => setRadiusKm(r.id)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                radiusKm === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Magnitude Filter Pills */}
+        <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
+          <span className="text-xs font-bold text-slate-400 px-2">Min Mag:</span>
+          {[
+            { mag: 2.5, label: 'All M2.5+' },
+            { mag: 4.0, label: 'M4.0+' },
+            { mag: 5.0, label: 'Strong M5.0+' },
+          ].map((m) => (
+            <button
+              key={m.mag}
+              type="button"
+              onClick={() => setMinMag(m.mag)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                minMag === m.mag ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Interactive Map */}
+      <OsmMiniMap
+        center={center}
+        home={{ lat, lon }}
+        radiusKm={radiusKm}
+        pins={pins}
+        selectedId={selected}
+        onPin={handleSelectPin}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
+
+      {/* Selected Quake Inspector Card */}
+      {selectedQuake && (
+        <div className="rounded-2xl border border-sky-500/50 bg-sky-950/40 p-3.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className={`px-2.5 py-1.5 rounded-xl font-black text-sm text-white ${quakeColor(selectedQuake.mag).bg}`}>
+              M {selectedQuake.mag.toFixed(1)}
             </div>
-          );
-        })}
+            <div>
+              <div className="text-sm font-extrabold text-white">{selectedQuake.properties.place}</div>
+              <div className="text-xs text-sky-200 font-medium">
+                {selectedQuake.dist.toLocaleString()} km from {locName} &bull; {selectedQuake.depthKm} km deep &bull; {fmtAgo(selectedQuake.properties.time ?? 0)}
+              </div>
+            </div>
+          </div>
+          <a
+            href={`https://earthquake.usgs.gov/earthquakes/eventpage/${selectedQuake.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5"
+          >
+            Inspect USGS Bulletin <ExternalLink size={12} />
+          </a>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!qErr && quakesWithDist.length === 0 && (
+        <div className="text-center text-slate-400 text-sm py-12 rounded-2xl border border-slate-800 bg-slate-900/60">
+          <CheckCircle2 size={36} className="text-emerald-400 mx-auto mb-2" />
+          <p className="font-bold text-white text-base">No earthquakes detected</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Zero earthquakes &ge; M{minMag} recorded within {radiusKm.toLocaleString()} km of {locName} in the USGS catalog.
+          </p>
+        </div>
+      )}
+
+      {/* Large-Print Earthquake List */}
+      {quakesWithDist.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+            Recent Seismic Events ({quakesWithDist.length}) &bull; Tap any event to pan map
+          </div>
+
+          <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            {quakesWithDist.map((f) => {
+              const sel = selected === f.id;
+              const color = quakeColor(f.mag);
+              const isShallow = f.depthKm <= 30;
+
+              return (
+                <div
+                  key={f.id}
+                  ref={(el) => {
+                    rowRefs.current[f.id] = el;
+                  }}
+                  onClick={() => handleSelectPin(f.id)}
+                  className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition flex items-center justify-between gap-3 shadow-sm ${
+                    sel
+                      ? 'bg-sky-950/40 border-sky-400'
+                      : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 hover:bg-slate-850'
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                      className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center font-black text-white shrink-0 shadow ${color.bg}`}
+                    >
+                      <span className="text-base leading-none">{f.mag.toFixed(1)}</span>
+                      <span className="text-[9px] uppercase tracking-tighter opacity-90">{color.label}</span>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-white font-extrabold text-sm sm:text-base truncate">
+                        {f.properties.place}
+                      </div>
+                      <div className="text-slate-400 text-xs font-medium flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                        <span className="text-slate-300 font-semibold">{f.dist.toLocaleString()} km from {locName}</span>
+                        <span>&bull;</span>
+                        <span className={isShallow ? 'text-amber-400 font-semibold' : 'text-slate-400'}>
+                          {f.depthKm} km depth {isShallow && '(shallow)'}
+                        </span>
+                        <span>&bull;</span>
+                        <span>{fmtAgo(f.properties.time ?? 0)}</span>
+                        {f.tsunami && (
+                          <span className="text-rose-400 font-bold bg-rose-500/20 px-1.5 py-0.2 rounded border border-rose-500/30 text-[10px]">
+                            🌊 Tsunami Watch
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    href={`https://earthquake.usgs.gov/earthquakes/eventpage/${f.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="View USGS Bulletin"
+                    className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 shrink-0"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Footer Info & Official TMD Seismology Cross-Bridge */}
+      <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3 text-xs text-slate-300 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>USGS Global Seismographic Network &bull; Covers Kanchanaburi, Myanmar &amp; Andaman</span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <a
+            href="https://earthquake.tmd.go.th/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-emerald-400 hover:text-emerald-300 underline font-semibold"
+          >
+            TMD Earthquake Division &rarr;
+          </a>
+          <a
+            href="https://earthquake.usgs.gov/earthquakes/map/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline font-semibold"
+          >
+            USGS Global Map &rarr;
+          </a>
+        </div>
       </div>
     </div>
   );
