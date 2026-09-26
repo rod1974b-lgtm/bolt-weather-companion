@@ -2262,69 +2262,193 @@ function StormCard({
 }
 
 // ============================================================================
-// LIGHTNING TRACKER (30-30 Safety Rule + Range Rings + Freshness Heatmap)
+// LIGHTNING TRACKER (Live Blitzortung Stream + LZW Decoder + 30-30 Radar)
 // ============================================================================
 
-const LIGHTNING_REGIONS: { id: 'nearby' | 'asia' | 'europe' | 'americas' | 'global'; label: string; bbox?: [number, number, number, number] }[] = [
+interface RawStrike {
+  lat: number;
+  lon: number;
+  time: number;
+}
+
+type LightningRegionId = 'nearby' | 'asia' | 'europe' | 'americas' | 'global';
+
+interface RegionConfig {
+  id: LightningRegionId;
+  label: string;
+  bbox?: { minLon: number; maxLon: number; minLat: number; maxLat: number };
+}
+
+const LIGHTNING_REGIONS: RegionConfig[] = [
   { id: 'nearby', label: 'Nearby (50 km)' },
-  { id: 'asia', label: 'Southeast Asia', bbox: [90, -10, 120, 25] },
-  { id: 'europe', label: 'Europe', bbox: [-15, 35, 40, 70] },
-  { id: 'americas', label: 'Americas', bbox: [-130, -55, -30, 55] },
-  { id: 'global', label: 'Global' },
+  { id: 'asia', label: 'Southeast Asia', bbox: { minLon: 90, maxLon: 125, minLat: -10, maxLat: 25 } },
+  { id: 'europe', label: 'Europe', bbox: { minLon: -15, maxLon: 40, minLat: 35, maxLat: 70 } },
+  { id: 'americas', label: 'Americas', bbox: { minLon: -130, maxLon: -30, minLat: -55, maxLat: 55 } },
+  { id: 'global', label: 'Global', bbox: { minLon: -180, maxLon: 180, minLat: -80, maxLat: 80 } },
 ];
 
+/** LZW decompressor for Blitzortung WebSocket frames */
+function decodeBlitzPayload(text: string): string {
+  const d = Array.from(text);
+  const e = new Map<number, string>();
+  let c = d[0];
+  let f = c;
+  const g = [c];
+  let h = 256;
+  let o = h;
+  for (let i = 1; i < d.length; i++) {
+    const code = d[i].charCodeAt(0);
+    const a = code < h ? d[i] : (e.has(code) ? e.get(code)! : f + c);
+    g.push(a);
+    c = a.charAt(0);
+    e.set(o, f + c);
+    o++;
+    f = a;
+  }
+  return g.join('');
+}
+
 function LightningTracker({ userLat, userLon }: { userLat: number; userLon: number }) {
-  const [region, setRegion] = useState<'nearby' | 'asia' | 'europe' | 'americas' | 'global'>('nearby');
-  const [strikes, setStrikes] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [httpError, setHttpError] = useState<{ status: number; message: string } | null>(null);
+  const [region, setRegion] = useState<LightningRegionId>('nearby');
+  const [strikes, setStrikes] = useState<RawStrike[]>([]);
+  const [connected, setConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const strikesBufferRef = useRef<RawStrike[]>([]);
 
-  // Poll strikes every 15 seconds
-  const loadStrikes = useCallback(async () => {
-    try {
-      setHttpError(null);
-      const activeReg = LIGHTNING_REGIONS.find((r) => r.id === region);
-      const bbox = region === 'nearby'
-        ? [userLon - 0.5, userLat - 0.5, userLon + 0.5, userLat + 0.5] as [number, number, number, number]
-        : activeReg?.bbox;
-
-      const data = await fetchLightningStrikes(bbox);
-      setStrikes(Array.isArray(data) ? data : []);
-      setLastUpdated(new Date());
-    } catch (err: any) {
-      if (err instanceof FunctionHttpError) {
-        setHttpError({ status: err.status, message: err.message });
-      } else {
-        setHttpError({ status: 500, message: err?.message || 'Lightning feed unavailable' });
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [region, userLat, userLon]);
-
+  // Connect to live Blitzortung WebSocket with failover
   useEffect(() => {
-    loadStrikes();
-    const timer = setInterval(loadStrikes, 15000);
-    return () => clearInterval(timer);
-  }, [loadStrikes]);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: any = null;
+    let isMounted = true;
+    const servers = ['wss://ws1.blitzortung.org', 'wss://ws7.blitzortung.org', 'wss://ws8.blitzortung.org'];
+    let srvIdx = 0;
 
-  // Compute closest strike and stats
-  const strikesWithDist = useMemo(() => {
+    function connect() {
+      if (!isMounted) return;
+      try {
+        const srvUrl = servers[srvIdx % servers.length];
+        ws = new WebSocket(srvUrl);
+
+        ws.onopen = () => {
+          if (!isMounted) return;
+          setConnected(true);
+          try {
+            ws?.send(JSON.stringify({ a: 111 }));
+          } catch {
+            // ignore send error
+          }
+        };
+
+        ws.onmessage = (evt) => {
+          if (!isMounted) return;
+          try {
+            const raw = typeof evt.data === 'string' ? evt.data : new TextDecoder().decode(evt.data);
+            const decoded = decodeBlitzPayload(raw);
+            const data = JSON.parse(decoded);
+            if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+              const strikeTime = typeof data.time === 'number'
+                ? (data.time > 10_000_000_000 ? Math.floor(data.time / 1_000_000) : data.time)
+                : Date.now();
+
+              const strike: RawStrike = { lat: data.lat, lon: data.lon, time: strikeTime };
+              const cutoff = Date.now() - 15 * 60 * 1000; // keep last 15 mins
+
+              strikesBufferRef.current = [
+                strike,
+                ...strikesBufferRef.current.filter((s) => s.time > cutoff)
+              ].slice(0, 1200);
+
+              setLastUpdated(new Date());
+            }
+          } catch {
+            // non-fatal parse drop
+          }
+        };
+
+        ws.onerror = () => {
+          setConnected(false);
+        };
+
+        ws.onclose = () => {
+          setConnected(false);
+          srvIdx++;
+          if (isMounted) {
+            reconnectTimer = setTimeout(connect, 4000);
+          }
+        };
+      } catch {
+        setConnected(false);
+        srvIdx++;
+        if (isMounted) {
+          reconnectTimer = setTimeout(connect, 5000);
+        }
+      }
+    }
+
+    connect();
+
+    // Flush buffer into state every 1.5s for smooth UI
+    const flushInterval = setInterval(() => {
+      if (!isMounted) return;
+      setStrikes([...strikesBufferRef.current]);
+    }, 1500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(flushInterval);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try {
+        ws?.close();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  // Filter strikes according to selected region
+  const activeConfig = useMemo(() => {
+    return LIGHTNING_REGIONS.find((r) => r.id === region) || LIGHTNING_REGIONS[0];
+  }, [region]);
+
+  const regionalStrikes = useMemo(() => {
     const now = Date.now();
-    return strikes.map((s) => {
-      const lat = s.lat ?? s.latitude ?? userLat;
-      const lon = s.lon ?? s.longitude ?? userLon;
-      const dist = haversineKm(userLat, userLon, lat, lon);
-      const ageSec = s.time ? Math.max(0, Math.round((now - new Date(s.time).getTime()) / 1000)) : 120;
-      return { ...s, lat, lon, dist, ageSec };
-    }).sort((a, b) => a.dist - b.dist);
-  }, [strikes, userLat, userLon]);
+    if (region === 'nearby') {
+      return strikes
+        .map((s) => {
+          const dist = haversineKm(userLat, userLon, s.lat, s.lon);
+          const ageSec = Math.max(0, Math.round((now - s.time) / 1000));
+          return { ...s, dist, ageSec };
+        })
+        .filter((s) => s.dist <= 55)
+        .sort((a, b) => a.dist - b.dist);
+    }
 
-  const closestStrike = strikesWithDist[0] || null;
+    const bbox = activeConfig.bbox;
+    if (!bbox) return [];
 
-  // Draw Range Rings, Concentric Safety Zones, and Strikes
+    return strikes
+      .filter((s) => s.lon >= bbox.minLon && s.lon <= bbox.maxLon && s.lat >= bbox.minLat && s.lat <= bbox.maxLat)
+      .map((s) => {
+        const dist = haversineKm(userLat, userLon, s.lat, s.lon);
+        const ageSec = Math.max(0, Math.round((now - s.time) / 1000));
+        return { ...s, dist, ageSec };
+      });
+  }, [strikes, region, activeConfig, userLat, userLon]);
+
+  const closestStrike = useMemo(() => {
+    if (region === 'nearby') {
+      return regionalStrikes[0] || null;
+    }
+    const sorted = [...regionalStrikes].sort((a, b) => a.dist - b.dist);
+    return sorted[0] || null;
+  }, [regionalStrikes, region]);
+
+  // Determine Danger Level for Nearby
+  const isDanger = region === 'nearby' && closestStrike && closestStrike.dist <= 15;
+  const isWarning = region === 'nearby' && closestStrike && closestStrike.dist > 15 && closestStrike.dist <= 35;
+
+  // Render Radar Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2338,37 +2462,36 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     // Deep radar background
     const bgGrad = ctx.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w / 2);
     bgGrad.addColorStop(0, '#090d16');
-    bgGrad.addColorStop(1, '#030712');
+    bgGrad.addColorStop(1, '#020617');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
     const cx = w / 2;
     const cy = h / 2;
-    const maxRadius = Math.min(w, h) * 0.44;
 
     if (region === 'nearby') {
-      // 50km radius mapped to maxRadius (1 px = 50 / maxRadius km)
+      // 50 km Polar Radar
+      const maxRadius = Math.min(w, h) * 0.44;
       const scale = maxRadius / 50;
       const rings = [
         { km: 5, color: 'rgba(239, 68, 68, 0.4)', label: '5 km Danger' },
         { km: 15, color: 'rgba(245, 158, 11, 0.35)', label: '15 km Warning' },
         { km: 30, color: 'rgba(14, 165, 233, 0.25)', label: '30 km Watch' },
-        { km: 50, color: 'rgba(71, 85, 105, 0.3)', label: '50 km' },
+        { km: 50, color: 'rgba(71, 85, 105, 0.3)', label: '50 km Range' },
       ];
 
-      // Draw Range Rings
+      // Draw concentric range rings
       rings.forEach((ring) => {
         const r = ring.km * scale;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.strokeStyle = ring.color;
-        ctx.lineWidth = ring.km === 5 || ring.km === 15 ? 1.5 : 1;
+        ctx.lineWidth = ring.km <= 15 ? 1.5 : 1;
         ctx.stroke();
 
-        // Label on ring
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(ring.label, cx + 6, cy - r + 14);
+        ctx.fillText(ring.label, cx + 6, cy - r + 13);
       });
 
       // Crosshairs
@@ -2381,35 +2504,29 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
       ctx.lineTo(cx + maxRadius, cy);
       ctx.stroke();
 
-      // Plot strikes in nearby coordinate frame
-      strikesWithDist.forEach((s) => {
+      // Plot nearby strikes
+      regionalStrikes.forEach((s) => {
         const dLat = s.lat - userLat;
         const dLon = s.lon - userLon;
-        const distKm = s.dist;
-        if (distKm > 55) return;
-
-        // Approximate equirectangular offset
         const px = cx + (dLon * 111.32 * Math.cos((userLat * Math.PI) / 180)) * scale;
         const py = cy - (dLat * 110.57) * scale;
 
-        // Color by strike age
-        let dotColor = '#a855f7'; // >10m: purple
-        let dotSize = 4;
+        let dotColor = '#a855f7';
+        let dotSize = 4.5;
         if (s.ageSec < 60) {
-          dotColor = '#ffffff'; // <1m: pure white flash
-          dotSize = 7;
-          // Outer shockwave ring
+          dotColor = '#ffffff';
+          dotSize = 7.5;
           ctx.beginPath();
-          ctx.arc(px, py, 12, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.arc(px, py, 13, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
           ctx.lineWidth = 1.5;
           ctx.stroke();
         } else if (s.ageSec < 300) {
-          dotColor = '#facc15'; // 1-5m: vivid amber
-          dotSize = 5.5;
+          dotColor = '#facc15';
+          dotSize = 6;
         } else if (s.ageSec < 600) {
-          dotColor = '#f97316'; // 5-10m: orange
-          dotSize = 4.5;
+          dotColor = '#f97316';
+          dotSize = 5;
         }
 
         ctx.beginPath();
@@ -2420,106 +2537,170 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
         ctx.fill();
         ctx.shadowBlur = 0;
       });
+
+      // Ratchaburi Center Marker
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('Ratchaburi (Center)', cx + 18, cy + 4);
     } else {
-      // Global / Regional projection grid
+      // True Regional Projection
+      const bbox = activeConfig.bbox!;
+      const lonSpan = bbox.maxLon - bbox.minLon;
+      const latSpan = bbox.maxLat - bbox.minLat;
+
+      // Coordinate Grid Lines
       ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
       ctx.lineWidth = 1;
-      for (let x = 40; x < w; x += 60) {
+      for (let x = 40; x < w; x += 70) {
         ctx.beginPath();
-        ctx.moveTo(x, 20);
-        ctx.lineTo(x, h - 20);
+        ctx.moveTo(x, 15);
+        ctx.lineTo(x, h - 15);
         ctx.stroke();
       }
       for (let y = 30; y < h; y += 50) {
         ctx.beginPath();
-        ctx.moveTo(20, y);
-        ctx.lineTo(w - 20, y);
+        ctx.moveTo(15, y);
+        ctx.lineTo(w - 15, y);
         ctx.stroke();
       }
 
-      // Plot regional strikes
-      strikes.forEach((s) => {
-        const sx = ((s.lon + 180) / 360) * w;
-        const sy = ((90 - s.lat) / 180) * h;
+      // Plot strikes in regional bounding box
+      regionalStrikes.forEach((s) => {
+        const sx = ((s.lon - bbox.minLon) / lonSpan) * w;
+        const sy = ((bbox.maxLat - s.lat) / latSpan) * h;
+
+        let dotColor = '#facc15';
+        let dotSize = 3.5;
+        if (s.ageSec < 60) {
+          dotColor = '#ffffff';
+          dotSize = 5.5;
+        } else if (s.ageSec < 300) {
+          dotColor = '#facc15';
+          dotSize = 4.5;
+        } else if (s.ageSec < 600) {
+          dotColor = '#f97316';
+          dotSize = 3.5;
+        } else {
+          dotColor = '#a855f7';
+          dotSize = 2.5;
+        }
+
         ctx.beginPath();
-        ctx.arc(sx, sy, 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#facc15';
+        ctx.arc(sx, sy, dotSize, 0, Math.PI * 2);
+        ctx.fillStyle = dotColor;
+        ctx.shadowColor = dotColor;
+        ctx.shadowBlur = 6;
         ctx.fill();
+        ctx.shadowBlur = 0;
       });
+
+      // Show Ratchaburi on Asia and Global projections
+      if (
+        userLon >= bbox.minLon &&
+        userLon <= bbox.maxLon &&
+        userLat >= bbox.minLat &&
+        userLat <= bbox.maxLat
+      ) {
+        const rx = ((userLon - bbox.minLon) / lonSpan) * w;
+        const ry = ((bbox.maxLat - userLat) / latSpan) * h;
+
+        ctx.beginPath();
+        ctx.arc(rx, ry, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(rx, ry, 11, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('Ratchaburi', rx + 14, ry + 4);
+      }
     }
-
-    // Home / User Marker (Blue Target Reticle)
-    ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('Ratchaburi', cx + 18, cy + 4);
-  }, [region, strikes, strikesWithDist, userLat, userLon]);
-
-  // Determine Danger Level
-  const isDanger = closestStrike && closestStrike.dist <= 15;
-  const isWarning = closestStrike && closestStrike.dist > 15 && closestStrike.dist <= 35;
+  }, [region, regionalStrikes, activeConfig, userLat, userLon]);
 
   return (
     <div className="space-y-4">
-      {/* 30-30 Safety Status Hero Banner */}
-      {isDanger ? (
-        <div className="p-4 rounded-xl border border-red-500/40 bg-red-950/40 backdrop-blur">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-            </span>
-            <span className="text-base font-extrabold text-red-300 uppercase tracking-wider">
-              Immediate Lightning Threat — Seek Shelter!
-            </span>
-          </div>
-          <p className="text-sm font-semibold text-red-100">
-            Strike detected <span className="font-extrabold text-white text-base">{closestStrike.dist.toFixed(1)} km</span> away ({Math.round(closestStrike.ageSec / 60)}m ago). 
-            Thunder delay is ~{Math.round(closestStrike.dist * 3)} seconds. Stay indoors!
-          </p>
-        </div>
-      ) : isWarning ? (
-        <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/30 backdrop-blur">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-400"></span>
-            <span className="text-base font-extrabold text-amber-300 uppercase tracking-wider">
-              Thunderstorm Approaching
-            </span>
-          </div>
-          <p className="text-sm text-amber-100">
-            Lightning detected {closestStrike.dist.toFixed(1)} km away. Thunderstorms are in the 30 km watch zone.
-          </p>
-        </div>
-      ) : (
-        <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 backdrop-blur flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
-            <div>
-              <span className="text-sm font-bold text-emerald-300 uppercase tracking-wide block">
-                All Clear — Zero Local Strikes
+      {/* Dynamic Status / Safety Card */}
+      {region === 'nearby' ? (
+        isDanger ? (
+          <div className="p-4 rounded-xl border border-red-500/40 bg-red-950/40 backdrop-blur">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
               </span>
-              <span className="text-xs text-slate-400">
-                Atmosphere is electrically stable within 50 km of Ratchaburi.
+              <span className="text-base font-extrabold text-red-300 uppercase tracking-wider">
+                Immediate Lightning Threat — Seek Shelter!
               </span>
             </div>
+            <p className="text-sm font-semibold text-red-100">
+              Strike detected <span className="font-extrabold text-white text-base">{closestStrike!.dist.toFixed(1)} km</span> away ({Math.round(closestStrike!.ageSec / 60)}m ago). 
+              Thunder delay is ~{Math.round(closestStrike!.dist * 3)}s. Stay indoors!
+            </p>
           </div>
-          <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-200 border border-emerald-700/40">
-            Safe Outdoors
+        ) : isWarning ? (
+          <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/30 backdrop-blur">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="h-2.5 w-2.5 rounded-full bg-amber-400"></span>
+              <span className="text-base font-extrabold text-amber-300 uppercase tracking-wider">
+                Thunderstorm Approaching
+              </span>
+            </div>
+            <p className="text-sm text-amber-100">
+              Lightning detected {closestStrike!.dist.toFixed(1)} km away. Thunderstorms are in the 30 km watch zone.
+            </p>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 backdrop-blur flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+              <div>
+                <span className="text-sm font-bold text-emerald-300 uppercase tracking-wide block">
+                  All Clear — Zero Local Strikes
+                </span>
+                <span className="text-xs text-slate-400">
+                  Atmosphere is electrically stable within 50 km of Ratchaburi. Radar is actively monitoring.
+                </span>
+              </div>
+            </div>
+            <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-200 border border-emerald-700/40 shrink-0">
+              Safe Outdoors
+            </span>
+          </div>
+        )
+      ) : (
+        <div className="p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 backdrop-blur flex items-center justify-between">
+          <div>
+            <span className="text-sm font-bold text-white uppercase tracking-wide block">
+              {activeConfig.label} Storm Activity
+            </span>
+            <span className="text-xs text-slate-400">
+              {regionalStrikes.length > 0
+                ? `${regionalStrikes.length} active strikes detected in the last 15 minutes`
+                : 'No major storm cells active in this sector'}
+            </span>
+          </div>
+          <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
+            {regionalStrikes.length} strikes
           </span>
         </div>
       )}
 
-      {/* Closest Strike HUD Card */}
-      {closestStrike && region === 'nearby' && (
+      {/* Closest Strike HUD Card for Nearby */}
+      {region === 'nearby' && closestStrike && (
         <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-slate-900/70 border border-slate-800 text-center">
           <div>
             <div className="text-[11px] text-slate-400 uppercase font-semibold">Closest Strike</div>
@@ -2533,7 +2714,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
           </div>
           <div>
             <div className="text-[11px] text-slate-400 uppercase font-semibold">Active in 50km</div>
-            <div className="text-lg font-black text-sky-400">{strikesWithDist.length} strikes</div>
+            <div className="text-lg font-black text-sky-400">{regionalStrikes.length} strikes</div>
           </div>
         </div>
       )}
@@ -2556,12 +2737,12 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
           ))}
         </div>
         <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5 shrink-0 px-2 py-1 rounded bg-slate-900/60 border border-slate-800">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          LIVE 15s
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+          {connected ? 'LIVE Stream' : 'Connecting...'}
         </span>
       </div>
 
-      {/* Canvas Radar Screen */}
+      {/* Radar Canvas (Always Visible & Unobstructed) */}
       <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col items-center">
         <canvas
           ref={canvasRef}
@@ -2590,21 +2771,6 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             Updated {fmtICT(lastUpdated)}
           </span>
         </div>
-
-        {/* "No strikes Nearby - Cycle to Asia" helper */}
-        {region === 'nearby' && strikes.length === 0 && !loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 text-center pointer-events-none">
-            <p className="text-sm font-semibold text-slate-200 mb-2">
-              No lightning strikes within 50 km in the last 15 minutes.
-            </p>
-            <button
-              onClick={() => setRegion('asia')}
-              className="pointer-events-auto px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-lg transition-transform active:scale-95"
-            >
-              Scan Southeast Asia Active Storms →
-            </button>
-          </div>
-        )}
       </div>
 
       {/* External Verifications & Agency Bridges */}
@@ -2632,6 +2798,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     </div>
   );
 }
+
 
 export function LiveTrackersModal({ open, onClose, location, hourly }: { open: boolean; onClose: () => void; location: GeoLocation | null; hourly: HourlyForecast | null }) {
   const [tab, setTab] = useState<TabId>('precip');
