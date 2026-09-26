@@ -856,11 +856,23 @@ function proxySource(sat: string): () => Promise<string> {
   };
 }
 
+// Load NOAA imagery straight from its public CDN (no proxy needed for <img>), cache-busted every 10 min.
+function directSource(url: string): () => Promise<string> {
+  return () =>
+    new Promise((resolve, reject) => {
+      const src = `${url}?t=${Math.floor(Date.now() / 600_000)}`;
+      const img = new Image();
+      img.onload = () => resolve(src);
+      img.onerror = () => reject(new Error(`Direct image failed: ${url}`));
+      img.src = src;
+    });
+}
+
 const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[]; unavailable?: string }[] = [
   { id: 'himawari', name: 'Himawari-9 (Thailand / SE Asia)', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,6z/map=satellite', sources: [] },
   { id: 'jma-full', name: 'Japan JMA (Asia Full Disk)', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [] },
-  { id: 'goes-east', name: 'GOES East (Americas)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
-  { id: 'goes-west', name: 'GOES West (Pacific)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
+  { id: 'goes-east', name: 'GOES East (Americas)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [directSource('https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/1808x1808.jpg'), proxySource('goes-east')] },
+  { id: 'goes-west', name: 'GOES West (Pacific)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [directSource('https://cdn.star.nesdis.noaa.gov/GOES18/ABI/FD/GEOCOLOR/1808x1808.jpg'), proxySource('goes-west')] },
   {
     id: 'meteosat',
     name: 'Meteosat (Europe / Africa)',
@@ -2291,15 +2303,17 @@ const LIGHTNING_REGIONS: RegionConfig[] = [
 
 function decodeBlitzPayload(text: string): string {
   const d = Array.from(text);
+  if (d.length === 0) return '';
   const e = new Map<number, string>();
-  let c = d[0];
-  let f = c;
-  const g = [c];
+  let c: string = d[0]!;
+  let f: string = c;
+  const g: string[] = [c];
   let h = 256;
   let o = h;
   for (let i = 1; i < d.length; i++) {
-    const code = d[i].charCodeAt(0);
-    const a = code < h ? d[i] : (e.has(code) ? e.get(code)! : f + c);
+    const ch = d[i]!;
+    const code = ch.charCodeAt(0);
+    const a: string = code < h ? ch : (e.has(code) ? e.get(code)! : f + c);
     g.push(a);
     c = a.charAt(0);
     e.set(o, f + c);
@@ -2326,7 +2340,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     function connect() {
       if (!isMounted) return;
       try {
-        const srvUrl = servers[srvIdx % servers.length];
+        const srvUrl = servers[srvIdx % servers.length]!;
         ws = new WebSocket(srvUrl);
         ws.onopen = () => {
           if (!isMounted) return;
@@ -2382,7 +2396,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     if (found && region === 'nearby') {
       return { ...found, center: { lat: userLat, lon: userLon } };
     }
-    return found || LIGHTNING_REGIONS[0];
+    return (found ?? LIGHTNING_REGIONS[0]) as NonNullable<typeof found>;
   }, [region, userLat, userLon]);
 
   const regionalStrikes = useMemo(() => {
