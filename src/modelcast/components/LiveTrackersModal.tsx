@@ -2674,31 +2674,186 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
 }
 
 
-export function LiveTrackersModal({ open, onClose, location, hourly }: { open: boolean; onClose: () => void; location: GeoLocation | null; hourly: HourlyForecast | null }) {
-  const [tab, setTab] = useState<TabId>('precip');
+type MainTabId = 'storm' | 'satellite' | 'emergency';
+type StormSubTab = 'precip' | 'lightning';
+type EmergencySubTab = 'warnings' | 'hurricane' | 'earthquake';
+
+export function LiveTrackersModal({
+  open,
+  onClose,
+  location,
+  hourly,
+}: {
+  open: boolean;
+  onClose: () => void;
+  location: GeoLocation | null;
+  hourly: HourlyForecast | null;
+}) {
+  const [mainTab, setMainTab] = useState<MainTabId>('storm');
+  const [stormSub, setStormSub] = useState<StormSubTab>('precip');
+  const [emergencySub, setEmergencySub] = useState<EmergencySubTab>('warnings');
+
   if (!open) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-6xl rounded-2xl bg-slate-800 border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-700">
-          <h2 className="text-white font-bold flex items-center gap-2 text-sm"><AlertTriangle size={18} className="text-amber-400" /> Live Trackers • {location?.name ?? 'Ratchaburi'}</h2>
-          <button onClick={onClose} className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"><X size={18} /></button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-6xl rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950/70">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30">
+              <AlertTriangle size={18} />
+            </span>
+            <div>
+              <h2 className="text-white font-black text-sm tracking-wide">
+                Live Trackers & Threat Center
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                {location?.name ?? 'Ratchaburi'} • 13.54°N, 99.82°E
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+          >
+            <X size={18} />
+          </button>
         </div>
-        <div className="flex flex-wrap gap-2 px-3 sm:px-6 py-3 bg-slate-900/60">
-          <button onClick={() => setTab('precip')} className={tab === 'precip' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Precipitation</button>
-          <button onClick={() => setTab('warnings')} className={tab === 'warnings' ? 'px-3 py-1.5 rounded-full text-xs bg-amber-500 text-white border border-amber-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>⚠️ Severe Warnings</button>
-          <button onClick={() => setTab('satellite')} className={tab === 'satellite' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Satellite</button>
-          <button onClick={() => setTab('earthquake')} className={tab === 'earthquake' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Earthquake</button>
-          <button onClick={() => setTab('hurricane')} className={tab === 'hurricane' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Hurricanes</button>
-          <button onClick={() => setTab('lightning')} className={tab === 'lightning' ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600'}>Lightning</button>
+
+        {/* 1. Primary 3-Tab Command Bar */}
+        <div className="grid grid-cols-3 gap-1.5 p-2 sm:px-6 sm:py-3 bg-slate-950/40 border-b border-slate-800">
+          <button
+            onClick={() => setMainTab('storm')}
+            className={`py-2 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mainTab === 'storm'
+                ? 'bg-sky-500 text-white shadow-md shadow-sky-500/25 border border-sky-400'
+                : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            <span>🌧️</span>
+            <span className="truncate">Storm & Rain</span>
+          </button>
+
+          <button
+            onClick={() => setMainTab('satellite')}
+            className={`py-2 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mainTab === 'satellite'
+                ? 'bg-sky-500 text-white shadow-md shadow-sky-500/25 border border-sky-400'
+                : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            <span>🛰️</span>
+            <span className="truncate">Satellite</span>
+          </button>
+
+          <button
+            onClick={() => setMainTab('emergency')}
+            className={`py-2 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+              mainTab === 'emergency'
+                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/25 border border-amber-400'
+                : 'bg-slate-800/70 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-700/50'
+            }`}
+          >
+            <span>🚨</span>
+            <span className="truncate">Hazards & Threats</span>
+          </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900/20">
-          {tab === 'precip' && <PrecipitationTracker location={location} />}
-          {tab === 'warnings' && <WarningsTracker location={location} />}
-          {tab === 'satellite' && <SatelliteTracker />}
-          {tab === 'earthquake' && <EarthquakeTracker location={location} />}
-          {tab === 'hurricane' && <HurricaneTracker location={location} />}
-          {tab === 'lightning' && <LightningTracker userLat={location?.latitude ?? 13.54} userLon={location?.longitude ?? 99.82} />}
+
+        {/* 2. Context Sub-Pills Bar */}
+        {mainTab === 'storm' && (
+          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+              View:
+            </span>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setStormSub('precip')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  stormSub === 'precip'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📊 Rain Forecast (72h)
+              </button>
+              <button
+                onClick={() => setStormSub('lightning')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  stormSub === 'lightning'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ⚡ Live Lightning Radar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mainTab === 'emergency' && (
+          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80 overflow-x-auto">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+              Hazards:
+            </span>
+            <div className="flex gap-1.5 whitespace-nowrap">
+              <button
+                onClick={() => setEmergencySub('warnings')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  emergencySub === 'warnings'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ⚠️ Severe Warnings
+              </button>
+              <button
+                onClick={() => setEmergencySub('hurricane')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  emergencySub === 'hurricane'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🌀 Typhoons & Storms
+              </button>
+              <button
+                onClick={() => setEmergencySub('earthquake')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  emergencySub === 'earthquake'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🌍 Earthquakes (USGS)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Modal Content Viewport */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/20">
+          {mainTab === 'storm' && (
+            <>
+              {stormSub === 'precip' && <PrecipitationTracker location={location} />}
+              {stormSub === 'lightning' && (
+                <LightningTracker
+                  userLat={location?.latitude ?? 13.54}
+                  userLon={location?.longitude ?? 99.82}
+                />
+              )}
+            </>
+          )}
+
+          {mainTab === 'satellite' && <SatelliteTracker />}
+
+          {mainTab === 'emergency' && (
+            <>
+              {emergencySub === 'warnings' && <WarningsTracker location={location} />}
+              {emergencySub === 'hurricane' && <HurricaneTracker location={location} />}
+              {emergencySub === 'earthquake' && <EarthquakeTracker location={location} />}
+            </>
+          )}
         </div>
       </div>
     </div>
