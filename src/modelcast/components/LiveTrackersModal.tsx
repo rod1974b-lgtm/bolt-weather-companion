@@ -2510,23 +2510,21 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             </span>
           </div>
         )
-      ) : (
+           ) : (
         <div className="p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 backdrop-blur flex items-center justify-between">
           <div>
             <span className="text-sm font-bold text-white uppercase tracking-wide block">
-{activeConfig.label} {region === 'americas' ? '• Tornado Alley / ITCZ' : region === 'global' ? '• Congo / Amazon / Asia Chimneys' : 'Storm Activity'}            
+              {activeConfig.label} {region === 'americas' ? '• Tornado Alley / ITCZ' : region === 'global' ? '• Congo / Amazon / Asia Chimneys' : 'Storm Activity'}
             </span>
             <span className="text-xs text-slate-400">
-<span className="text-xs text-slate-400">
-{regionalStrikes.length > 0 ? `${regionalStrikes.length} active strikes detected in the last 15 minutes` : 'No major storm cells active in this sector'}
-</span>
+              {`${regionalStrikes.length} strikes/15m in ${activeConfig.label}`}
+            </span>
           </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
-</div>            
-</div>
-<div className="flex items-center gap-1.5">
-<span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
-          </div>
+            {regionalStrikes.length} strikes
+          </span>
+        </div>
+      )}          </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
             {regionalStrikes.length} strikes
           </span>
