@@ -2524,13 +2524,13 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             {regionalStrikes.length} strikes
           </span>
         </div>
+             </div>
       )}          </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
             {regionalStrikes.length} strikes
           </span>
         </div>
       )}
-
       {/* Region Selector Pills & LIVE Status */}
       <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1">
         <div className="flex gap-1">
