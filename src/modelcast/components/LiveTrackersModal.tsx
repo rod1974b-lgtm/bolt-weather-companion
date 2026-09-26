@@ -2525,7 +2525,7 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
           </span>
         </div>
       )}          
-               </div>
+            
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
             {regionalStrikes.length} strikes
           </span>
