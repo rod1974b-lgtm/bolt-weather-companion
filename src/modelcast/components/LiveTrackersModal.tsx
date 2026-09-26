@@ -479,7 +479,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   const padR = 20;
   const padT = 45;
   const padB = 40;
-  const plotH = H - padT - padB;
+  const plotH = H - padT - padB;    
 
   const yForVal = (v: number) => padT + plotH - (Math.min(v, yMax) / yMax) * plotH;
 
@@ -814,15 +814,27 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   );
 }
 
-function jmaDirectUrl(area: 'se1' | 'fd_', minutesAgo: number): string {
-  const d = new Date(Date.now() - minutesAgo * 60_000);
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mm = String(Math.floor(d.getUTCMinutes() / 10) * 10).padStart(2, '0');
-  return `https://www.data.jma.go.jp/mscweb/data/himawari/img/${area}/${area}_trm_${hh}${mm}.jpg`;
+type SatBand = 'trm' | 'b13'; // trm = True Color (Daylight), b13 = Infrared Clean Window (24/7 Day & Night)
+type SatRegion = 'se1' | 'fd_'; // se1 = Southeast Asia (Thailand focus), fd_ = Full Earth Disk
+
+interface SatFrame {
+  url: string;
+  utcDate: Date;
+  labelIct: string;
+  minutesAgo: number;
 }
 
-function jmaSources(areas: ('se1' | 'fd_')[]): (() => Promise<string>)[] {
-  return areas.flatMap((area) => [20, 30, 40, 50, 60, 70].map((minutesAgo) => async () => jmaDirectUrl(area, minutesAgo)));
+function buildHimawariFrames(region: SatRegion, band: SatBand): SatFrame[] {
+  // 5 frames going forward in time: 60m ago -> 50m -> 40m -> 30m -> 20m ago
+  const intervals = [60, 50, 40, 30, 20];
+  return intervals.map((minutesAgo) => {
+    const d = new Date(Date.now() - minutesAgo * 60_000);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(Math.floor(d.getUTCMinutes() / 10) * 10).padStart(2, '0');
+    const url = `https://www.data.jma.go.jp/mscweb/data/himawari/img/${region}/${region}_${band}_${hh}${mm}.jpg`;
+    const labelIct = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+    return { url, utcDate: d, labelIct, minutesAgo };
+  });
 }
 
 function proxySource(sat: string): () => Promise<string> {
@@ -836,90 +848,488 @@ function proxySource(sat: string): () => Promise<string> {
 }
 
 const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources: (() => Promise<string>)[]; unavailable?: string }[] = [
-  { id: 'goes-east', name: 'GOES East - Americas', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
-  { id: 'goes-west', name: 'GOES West - Pacific', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
-  { id: 'himawari', name: 'Himawari - Thailand/Asia', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,5z/map=satellite', sources: jmaSources(['se1', 'fd_']) },
-  { id: 'jma', name: 'Japan JMA - Asia', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: jmaSources(['fd_', 'se1']) },
+  { id: 'himawari', name: 'Himawari-9 (Thailand / SE Asia)', covers: true, mapUrl: 'https://zoom.earth/#view=13.54,99.82,6z/map=satellite', sources: [] },
+  { id: 'jma-full', name: 'Japan JMA (Asia Full Disk)', covers: true, mapUrl: 'https://zoom.earth/#view=36,138,5z/map=satellite', sources: [] },
+  { id: 'goes-east', name: 'GOES East (Americas)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-75,3z/map=satellite', sources: [proxySource('goes-east')] },
+  { id: 'goes-west', name: 'GOES West (Pacific)', covers: false, mapUrl: 'https://zoom.earth/#view=0,-150,3z/map=satellite', sources: [proxySource('goes-west')] },
   {
     id: 'meteosat',
-    name: 'Meteosat - Europe/Africa',
+    name: 'Meteosat (Europe / Africa)',
     covers: false,
     mapUrl: 'https://view.eumetsat.int/productviewer?v=default',
     sources: [],
-    unavailable: 'Meteosat imagery is unavailable in this viewer because the former NOAA image source no longer exists.',
+    unavailable: 'Meteosat direct stream unavailable. Please view via the official EUMETSAT viewer.',
   },
 ];
 
 function SatelliteTracker() {
-  const [active, setActive] = useState(2);
-  const [pending, setPending] = useState<number | null>(null);
-  const [srcIdx, setSrcIdx] = useState(0);
-  const [url, setUrl] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [lastErr, setLastErr] = useState<string | null>(null);
+  const [activeSat, setActiveSat] = useState(0); // default Himawari (index 0)
+  const [pendingSat, setPendingSat] = useState<number | null>(null);
+  const [band, setBand] = useState<SatBand>('trm'); // True Color vs IR
+  const [region, setRegion] = useState<SatRegion>('se1'); // SE Asia vs Full Disk
+  const [frameIdx, setFrameIdx] = useState(4); // default latest frame
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [showReticle, setShowReticle] = useState(true);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [proxyUrl, setProxyUrl] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
-  const current = SATS[active] ?? SATS[2]!;
-  const failed = srcIdx >= current.sources.length;
 
+  const currentSat = SATS[activeSat] ?? SATS[0]!;
+  const isDirectHimawari = activeSat === 0 || activeSat === 1;
+
+  // Build animated frames for Himawari
+  const activeRegion: SatRegion = activeSat === 1 ? 'fd_' : region;
+  const frames = buildHimawariFrames(activeRegion, band);
+  const activeFrame = frames[frameIdx] ?? frames[frames.length - 1]!;
+
+  // 10-minute auto refresh timer
   useEffect(() => {
-    const timer = setInterval(() => { setSrcIdx(0); setTick((t) => t + 1); }, 10 * 60 * 1000);
+    const timer = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 10 * 60 * 1000);
     return () => clearInterval(timer);
   }, []);
 
+  // Animation playback loop
   useEffect(() => {
+    if (!isPlaying || !isDirectHimawari) return;
+    const interval = setInterval(() => {
+      setFrameIdx((curr) => (curr + 1) % frames.length);
+    }, 900);
+    return () => clearInterval(interval);
+  }, [isPlaying, isDirectHimawari, frames.length]);
+
+  // Load external proxy image if non-Himawari satellite is chosen
+  useEffect(() => {
+    if (isDirectHimawari) {
+      setProxyUrl(null);
+      setLoadError(null);
+      return;
+    }
     let alive = true;
     let made: string | null = null;
-    setLoaded(false);
-    setUrl(null);
-    const src = current.sources[srcIdx];
-    if (!src) return;
-    src()
-      .then((u) => { if (!alive) return; if (u.startsWith('blob:')) made = u; setUrl(u); })
-      .catch((e: Error) => { if (!alive) return; console.warn(e.message); setLastErr(e.message); setSrcIdx((i) => i + 1); });
-    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
-  }, [active, srcIdx, tick, current]);
+    setImageLoaded(false);
+    setLoadError(null);
 
-  const choose = (i: number) => {
-    if (!SATS[i]!.covers) { setPending(i); return; }
-    setPending(null); setActive(i); setSrcIdx(0); setLastErr(null);
+    const src = currentSat.sources[0];
+    if (!src) {
+      if (currentSat.unavailable) setLoadError(currentSat.unavailable);
+      return;
+    }
+
+    src()
+      .then((u) => {
+        if (!alive) return;
+        if (u.startsWith('blob:')) made = u;
+        setProxyUrl(u);
+      })
+      .catch((e: Error) => {
+        if (!alive) return;
+        setLoadError(e.message);
+      });
+
+    return () => {
+      alive = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [activeSat, tick, isDirectHimawari, currentSat]);
+
+  const selectSat = (i: number) => {
+    if (!SATS[i]!.covers) {
+      setPendingSat(i);
+      return;
+    }
+    setPendingSat(null);
+    setActiveSat(i);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsPlaying(false);
   };
 
-  const pill = (on: boolean) => on ? 'px-3 py-1.5 rounded-full text-xs bg-sky-500 text-white border border-sky-400 shadow' : 'px-3 py-1.5 rounded-full text-xs bg-slate-700 text-slate-300 border border-slate-600 hover:bg-slate-600';
+  const handleZoom = (delta: number) => {
+    setZoom((z) => {
+      const next = Math.max(1, Math.min(2.5, +(z + delta).toFixed(1)));
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const startDrag = (clientX: number, clientY: number) => {
+    if (zoom <= 1) return;
+    setIsDragging(true);
+    setDragStart({ x: clientX - pan.x, y: clientY - pan.y });
+  };
+
+  const onDrag = (clientX: number, clientY: number) => {
+    if (!isDragging || zoom <= 1) return;
+    setPan({
+      x: Math.max(-150 * (zoom - 1), Math.min(150 * (zoom - 1), clientX - dragStart.x)),
+      y: Math.max(-150 * (zoom - 1), Math.min(150 * (zoom - 1), clientY - dragStart.y)),
+    });
+  };
+
+  const stopDrag = () => setIsDragging(false);
 
   return (
-    <div>
-      <div className="flex flex-wrap gap-2 mb-3">
+    <div className="space-y-3 select-none">
+      {/* Satellite Selector Pills */}
+      <div className="flex flex-wrap items-center gap-1.5 pb-1 border-b border-slate-800">
         {SATS.map((s, i) => (
-          <button key={s.id} onClick={() => choose(i)} className={pill(active === i && pending === null)}>{s.name}</button>
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => selectSat(i)}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+              activeSat === i && pendingSat === null
+                ? 'bg-sky-500 text-white shadow-md shadow-sky-500/20 ring-1 ring-sky-300'
+                : 'bg-slate-800/80 text-slate-300 border border-slate-700/80 hover:bg-slate-700'
+            }`}
+          >
+            {s.name}
+          </button>
         ))}
       </div>
-      {pending !== null && (
-        <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 flex flex-wrap items-center gap-3">
-          <Info size={16} className="text-amber-300" />
-          <span className="flex-1 min-w-[180px] text-xs text-amber-100">{SATS[pending]!.name}: Out of coverage for Ratchaburi - Switch to Himawari?</span>
-          <button onClick={() => choose(2)} className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs hover:bg-sky-500">Switch to Himawari</button>
-          <button onClick={() => { setActive(pending); setPending(null); setSrcIdx(0); setLastErr(null); }} className="px-3 py-1.5 rounded-full bg-slate-700 text-slate-200 text-xs hover:bg-slate-600">Load anyway</button>
+
+      {/* Out of Coverage Warning */}
+      {pendingSat !== null && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-amber-200">
+            <Info size={16} className="text-amber-300 shrink-0" />
+            <span><strong>{SATS[pendingSat]!.name}</strong> is out of coverage for Ratchaburi, Thailand.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => selectSat(0)}
+              className="px-3 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-bold hover:bg-sky-400"
+            >
+              Switch to Himawari
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSat(pendingSat);
+                setPendingSat(null);
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 text-xs font-semibold hover:bg-slate-600"
+            >
+              Load anyway
+            </button>
+          </div>
         </div>
       )}
-      <div className="relative bg-black rounded-xl overflow-hidden aspect-video min-h-[480px] border border-slate-700 flex items-center justify-center">
-        {!failed && !loaded && <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10 bg-slate-900"><Loader2 size={32} className="animate-spin mb-3 text-sky-400" /><span className="text-sm">Loading live satellite image...</span></div>}
-        {failed ? (
-          <div className="flex flex-col items-center justify-center text-center text-slate-300 p-8">
-            <Satellite size={40} className="mb-3 text-sky-400" />
-            <p className="text-sm font-medium">Satellite image temporarily unavailable</p>
-            {(lastErr || current.unavailable) && <p className="text-xs text-red-300 mt-2 break-words">{lastErr || current.unavailable}</p>}
-            <div className="mt-3 flex flex-wrap gap-2 justify-center">
-              <button onClick={() => { setSrcIdx(0); setLastErr(null); setTick((t) => t + 1); }} className="px-3 py-1.5 rounded-full bg-slate-700 text-white text-xs hover:bg-slate-600">Retry</button>
-              <a href={current.mapUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Satellite Map <ExternalLink size={10} /></a>
+
+      {/* Controls Bar: Band, Region, Zoom, and Playback */}
+      {isDirectHimawari && (
+        <div className="bg-slate-800/90 rounded-2xl border border-slate-700 p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5 shadow-sm">
+          {/* True Color vs IR Band Toggle */}
+          <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => setBand('trm')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                band === 'trm' ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              ☀️ True Color (Day)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBand('b13')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                band === 'b13' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              🌙 Infrared IR (24/7)
+            </button>
+          </div>
+
+          {/* Area Focus Toggle */}
+          {activeSat === 0 && (
+            <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+              <button
+                type="button"
+                onClick={() => setRegion('se1')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                  region === 'se1' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🇹🇭 Thailand Zoom
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegion('fd_')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                  region === 'fd_' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🌏 Full Earth Disk
+              </button>
+            </div>
+          )}
+
+          {/* Zoom and Pin Controls */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            {region === 'se1' && activeSat === 0 && (
+              <button
+                type="button"
+                onClick={() => setShowReticle((v) => !v)}
+                title="Toggle Ratchaburi Crosshair Marker"
+                className={`px-2 py-1 rounded-lg text-xs font-bold border transition ${
+                  showReticle
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                    : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white'
+                }`}
+              >
+                📍 Ratchaburi
+              </button>
+            )}
+            <div className="flex items-center gap-1 bg-slate-900/90 px-1.5 py-1 rounded-xl border border-slate-700/80 text-xs text-slate-300">
+              <button
+                type="button"
+                onClick={() => handleZoom(0.25)}
+                disabled={zoom >= 2.5}
+                className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 font-bold disabled:opacity-40"
+              >
+                +
+              </button>
+              <span className="w-10 text-center font-bold text-sky-300">{Math.round(zoom * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => handleZoom(-0.25)}
+                disabled={zoom <= 1}
+                className="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 font-bold disabled:opacity-40"
+              >
+                −
+              </button>
+              {zoom > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoom(1);
+                    setPan({ x: 0, y: 0 });
+                  }}
+                  className="ml-1 text-[11px] text-amber-300 underline font-semibold"
+                >
+                  Reset
+                </button>
+              )}
             </div>
           </div>
-        ) : url && (
-          <img key={url} src={url} alt={`${current.name} live satellite`} className={`w-full h-full min-h-[480px] object-contain bg-black transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} onError={() => { setLastErr(`${current.name}: image failed to load`); setSrcIdx((i) => i + 1); }} />
+        </div>
+      )}
+
+      {/* Main Satellite Viewport */}
+      <div
+        className="relative bg-black rounded-2xl overflow-hidden border border-slate-700/80 aspect-[4/3] sm:aspect-video min-h-[380px] sm:min-h-[460px] flex items-center justify-center cursor-grab active:cursor-grabbing"
+        onMouseDown={(e) => startDrag(e.clientX, e.clientY)}
+        onMouseMove={(e) => onDrag(e.clientX, e.clientY)}
+        onMouseUp={stopDrag}
+        onMouseLeave={stopDrag}
+        onTouchStart={(e) => {
+          if (e.touches[0]) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+        }}
+        onTouchMove={(e) => {
+          if (e.touches[0]) onDrag(e.touches[0].clientX, e.touches[0].clientY);
+        }}
+        onTouchEnd={stopDrag}
+      >
+        {/* Loading Spinner */}
+        {!imageLoaded && !loadError && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-xs text-slate-300">
+            <Loader2 size={36} className="animate-spin mb-3 text-sky-400" />
+            <span className="text-sm font-semibold tracking-wide">Acquiring high-resolution satellite imagery...</span>
+            <span className="text-xs text-slate-400 mt-1">Connecting to JMA Himawari meteorological feed</span>
+          </div>
+        )}
+
+        {/* Error Fallback */}
+        {loadError ? (
+          <div className="p-8 text-center text-slate-300 z-10 max-w-md">
+            <Satellite size={44} className="mx-auto mb-3 text-sky-400" />
+            <p className="text-base font-bold text-white">Satellite Feed Unavailable</p>
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">{loadError}</p>
+            <div className="mt-4 flex flex-wrap gap-2 justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoadError(null);
+                  setImageLoaded(false);
+                  setTick((t) => t + 1);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-700 text-white text-xs font-bold hover:bg-slate-600"
+              >
+                Retry Feed
+              </button>
+              <a
+                href={currentSat.mapUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500"
+              >
+                Open Official Map <ExternalLink size={12} />
+              </a>
+            </div>
+          </div>
+        ) : (
+          /* Satellite Image Canvas */
+          <div
+            className="w-full h-full relative flex items-center justify-center transition-transform duration-75"
+            style={{
+              transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+              transformOrigin: 'center center',
+            }}
+          >
+            <img
+              key={isDirectHimawari ? activeFrame.url : (proxyUrl ?? '')}
+              src={isDirectHimawari ? activeFrame.url : (proxyUrl ?? '')}
+              alt={`${currentSat.name} Satellite`}
+              className={`max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-300 ${
+                imageLoaded ? 'opacity-100' : 'opacity-0'
+              }`}
+              onLoad={() => setImageLoaded(true)}
+              onError={() => {
+                if (isDirectHimawari && frameIdx > 0) {
+                  // If latest frame is not yet generated upstream, step back 1 frame
+                  setFrameIdx((idx) => idx - 1);
+                } else {
+                  setLoadError(`${currentSat.name} stream is temporarily unreachable.`);
+                }
+              }}
+            />
+
+            {/* Target Reticle for Ratchaburi (SE Asia Frame) */}
+            {isDirectHimawari && region === 'se1' && showReticle && imageLoaded && (
+              <div
+                className="absolute pointer-events-none z-10 flex flex-col items-center"
+                style={{ top: '46.5%', left: '52.3%', transform: 'translate(-50%, -50%)' }}
+              >
+                <div className="relative flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full border-2 border-rose-500 animate-ping opacity-60 absolute" />
+                  <div className="w-5 h-5 rounded-full border-2 border-rose-400 bg-rose-500/20 flex items-center justify-center shadow-lg">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  </div>
+                </div>
+                <div className="mt-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-rose-500/60 text-[10px] font-black text-rose-300 whitespace-nowrap shadow-md">
+                  Ratchaburi (13.5°N, 99.8°E)
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Floating Capture Timestamp HUD */}
+        {imageLoaded && isDirectHimawari && (
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-lg">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-500" />
+            <div className="text-left">
+              <div className="text-xs font-black text-white leading-tight">
+                {activeFrame.labelIct} ICT
+                {frameIdx === frames.length - 1 && (
+                  <span className="ml-1.5 text-[10px] uppercase font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                    Latest
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium leading-tight">
+                Himawari-9 &bull; captured {activeFrame.minutesAgo}m ago
+              </div>
+            </div>
+          </div>
         )}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-[10px] text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Live satellite imagery &bull; refreshes every 10 minutes &bull; {current.name}</span>
-        <a href={current.mapUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">Open Full Map <ExternalLink size={10} /></a>
+
+      {/* Animation Player & Frame Scrubber (Himawari Only) */}
+      {isDirectHimawari && (
+        <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+          {/* Play / Step Buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsPlaying((p) => !p)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition ${
+                isPlaying
+                  ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                  : 'bg-sky-500 text-white hover:bg-sky-400 shadow-md shadow-sky-500/20'
+              }`}
+            >
+              {isPlaying ? '⏸ Pause Loop' : '▶ Play Cloud Loop'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPlaying(false);
+                setFrameIdx((idx) => (idx - 1 + frames.length) % frames.length);
+              }}
+              title="Previous 10m Frame"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700"
+            >
+              ◀ 10m
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPlaying(false);
+                setFrameIdx((idx) => (idx + 1) % frames.length);
+              }}
+              title="Next 10m Frame"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700"
+            >
+              10m ▶
+            </button>
+          </div>
+
+          {/* Time Scrubber Slider */}
+          <div className="flex items-center gap-2 w-full sm:max-w-xs">
+            <span className="text-[11px] font-bold text-slate-400 shrink-0">{frames[0]?.labelIct}</span>
+            <input
+              type="range"
+              min={0}
+              max={frames.length - 1}
+              value={frameIdx}
+              onChange={(e) => {
+                setIsPlaying(false);
+                setFrameIdx(Number(e.target.value));
+              }}
+              className="w-full accent-sky-400 cursor-pointer h-2 bg-slate-700 rounded-lg"
+            />
+            <span className="text-[11px] font-bold text-emerald-400 shrink-0">{frames[frames.length - 1]?.labelIct}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Footer Info & Quick Radar Cross-Links */}
+      <div className="pt-1 flex items-center justify-between gap-2 flex-wrap text-xs text-slate-400">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span>Refreshes every 10 min &bull; JMA Himawari meteorological geostationary feed</span>
+        </div>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <a
+            href="https://weather.tmd.go.th/bma.php"
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-600/30"
+          >
+            📡 TMD Doppler Radar (Central) <ExternalLink size={11} />
+          </a>
+          <a
+            href={currentSat.mapUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded-xl bg-sky-600 text-white text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500 shadow-sm"
+          >
+            Open Satellite Map <ExternalLink size={11} />
+          </a>
+        </div>
       </div>
     </div>
   );
