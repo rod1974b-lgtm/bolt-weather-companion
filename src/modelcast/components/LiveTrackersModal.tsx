@@ -60,6 +60,10 @@ function severityColor(severity: string): { bg: string; border: string; text: st
   return { bg: 'bg-sky-500/15', border: 'border-sky-500/40', text: 'text-sky-300' };
 }
 
+function fmtICT(d: Date): string {
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
+}
+
 function WarningsTracker({ location }: { location: GeoLocation | null }) {
   const [alerts, setAlerts] = useState<WeatherAlertData[]>([]);
   const [loading, setLoading] = useState(true);
