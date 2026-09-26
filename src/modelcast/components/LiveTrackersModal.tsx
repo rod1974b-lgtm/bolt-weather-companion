@@ -2518,8 +2518,10 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
             </span>
             <span className="text-xs text-slate-400">
 <span className="text-xs text-slate-400">
-{`${regionalStrikes.length} strikes/15m in ${activeConfig.label}`}
+{regionalStrikes.length > 0 ? `${regionalStrikes.length} active strikes detected in the last 15 minutes` : 'No major storm cells active in this sector'}
 </span>
+          </div>
+          <span className="text-xs font-mono px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800 shrink-0 font-bold">
 </div>            
 </div>
 <div className="flex items-center gap-1.5">
