@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { GeoLocation, HourlyForecast } from '@/modelcast/lib/types';
 import { callFunction, supabaseUrl, supabaseAnonKey } from '@/modelcast/lib/supabase';
 import { fetchPrecipitationNearby, fetchTropicalStorms, haversineKm } from '@/modelcast/lib/liveTrackers';
