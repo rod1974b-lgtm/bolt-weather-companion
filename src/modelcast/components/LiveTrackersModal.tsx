@@ -60,6 +60,7 @@ function severityColor(severity: string): { bg: string; border: string; text: st
   return { bg: 'bg-sky-500/15', border: 'border-sky-500/40', text: 'text-sky-300' };
 }
 
+
 function WarningsTracker({ location }: { location: GeoLocation | null }) {
   const [alerts, setAlerts] = useState<WeatherAlertData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,7 +107,10 @@ function WarningsTracker({ location }: { location: GeoLocation | null }) {
   }
 
   const rank = (s: string) => ({ extreme: 0, severe: 1, moderate: 2, minor: 3 } as Record<string, number>)[s.toLowerCase()] ?? 4;
- const sorted = [...alerts].sort((a, b) => new Date(a.expires).getTime() - new Date(b.expires).getTime());
+  const sorted = [...alerts].sort(
+    (a, b) => rank(a.severity) - rank(b.severity) || new Date(a.expires).getTime() - new Date(b.expires).getTime(),
+  );
+  const endsIn = (iso: string) => {
     if (!iso) return '';
     const d = new Date(iso);
     const h = Math.max(0, Math.round((d.getTime() - Date.now()) / 3600000));
