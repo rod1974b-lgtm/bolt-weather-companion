@@ -2619,7 +2619,8 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
             Ratchaburi
           </span>
         </div>
-
+        {(REGION_DOTS[region]||[]).map(d=>{const pt=strikePos(d.lat,d.lon);return <div key={d.name} className="absolute z-10 pointer-events-none px-1.5 py-0.5 rounded bg-slate-900/85 border border-slate-600 text-[10px] font-bold text-slate-200" style={{left:`calc(50% + ${pt.x}px)`,top:`calc(50% + ${pt.y}px)`,transform:'translate(-50%,-130%)'}}>{d.name}</div>})}
+        {/* Live Strike Flashes over Map */}
         {/* Live Strike Flashes over Map */}
         {regionalStrikes.map((s, idx) => {
           const pt = strikePos(s.lat, s.lon);
