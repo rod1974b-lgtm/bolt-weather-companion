@@ -2673,6 +2673,9 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
   );
 }
 
+// ==========================================
+// MODAL WRAPPER & TAB COMMAND CENTER
+// ==========================================
 
 type MainTabId = 'storm' | 'satellite' | 'emergency';
 type StormSubTab = 'precip' | 'lightning';
@@ -2696,33 +2699,34 @@ export function LiveTrackersModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-6xl rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-950/80 shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30">
               <AlertTriangle size={18} />
             </span>
             <div>
               <h2 className="text-white font-black text-sm tracking-wide">
-                Live Trackers & Threat Center
+                Live Trackers &amp; Threat Center
               </h2>
               <p className="text-[11px] text-slate-400">
-                {location?.name ?? 'Ratchaburi'} • 13.54°N, 99.82°E
+                {location?.name ?? 'Ratchaburi'} &bull; {(location?.latitude ?? 13.54).toFixed(2)}°N, {(location?.longitude ?? 99.82).toFixed(2)}°E
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+            title="Close modal"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* 1. Primary 3-Tab Command Bar */}
-        <div className="grid grid-cols-3 gap-1.5 p-2 sm:px-6 sm:py-3 bg-slate-950/40 border-b border-slate-800">
+        <div className="grid grid-cols-3 gap-1.5 p-2 sm:px-6 sm:py-3 bg-slate-950/40 border-b border-slate-800 shrink-0">
           <button
             onClick={() => setMainTab('storm')}
             className={`py-2 px-2 sm:px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
@@ -2732,7 +2736,7 @@ export function LiveTrackersModal({
             }`}
           >
             <span>🌧️</span>
-            <span className="truncate">Storm & Rain</span>
+            <span className="truncate">Storm &amp; Rain</span>
           </button>
 
           <button
@@ -2756,17 +2760,17 @@ export function LiveTrackersModal({
             }`}
           >
             <span>🚨</span>
-            <span className="truncate">Hazards & Threats</span>
+            <span className="truncate">Hazards &amp; Threats</span>
           </button>
         </div>
 
         {/* 2. Context Sub-Pills Bar */}
         {mainTab === 'storm' && (
-          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80">
+          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80 shrink-0 overflow-x-auto">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
               View:
             </span>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 whitespace-nowrap">
               <button
                 onClick={() => setStormSub('precip')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
@@ -2792,7 +2796,7 @@ export function LiveTrackersModal({
         )}
 
         {mainTab === 'emergency' && (
-          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80 overflow-x-auto">
+          <div className="flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800/80 shrink-0 overflow-x-auto">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
               Hazards:
             </span>
@@ -2815,7 +2819,7 @@ export function LiveTrackersModal({
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                🌀 Typhoons & Storms
+                🌀 Typhoons &amp; Storms
               </button>
               <button
                 onClick={() => setEmergencySub('earthquake')}
@@ -2859,3 +2863,4 @@ export function LiveTrackersModal({
     </div>
   );
 }
+
