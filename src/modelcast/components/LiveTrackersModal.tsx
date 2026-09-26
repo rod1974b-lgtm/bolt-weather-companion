@@ -19,7 +19,7 @@ type LightningRegion = 'nearby' | 'asia' | 'europe' | 'americas' | 'global';
 
 type EarthquakeFeature = {
   id: string;
-  properties: { place?: string; mag?: number; time?: number };
+  properties: { place?: string | undefined; mag?: number; time?: number };
   geometry: { coordinates: [number, number, number] };
 };
 
