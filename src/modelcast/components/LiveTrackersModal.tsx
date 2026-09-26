@@ -296,10 +296,10 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
   const yTicks = 5;
 
   const numHours = hours.length;
-  const barSlot = 7;
+  const barSlot = 10;
   const chartW = numHours * barSlot;
   const W = chartW + 50 + 14;
-  const H = 320;
+  const H = 280;
   const padL = 50;
   const padR = 14;
   const padT = 38;
@@ -365,12 +365,18 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
             </div>
             <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-3">
               <div className="text-[10px] text-slate-400 uppercase tracking-wide">Next Rain</div>
-              {nextRain ? (
-                <div className="mt-1">
-                  <span className="text-xl font-bold text-sky-300">{new Date(nextRain.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{nextRain.precip.toFixed(1)} mm &bull; {nextRain.prob}%</div>
-                </div>
-              ) : (
+              {nextRain ? (() => {
+                const mins = Math.max(0, Math.round((new Date(nextRain.time).getTime() - Date.now()) / 60000));
+                return (
+                  <div className="mt-1">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold text-sky-300">{nextRain.precip.toFixed(1)}</span>
+                      <span className="text-xs text-slate-400">mm &bull; {nextRain.prob}%</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">in {Math.floor(mins / 60)}h {mins % 60}m &bull; {fmtICT(new Date(nextRain.time))} ICT</div>
+                  </div>
+                );
+              })() : (
                 <div className="mt-1">
                   <span className="text-base font-bold text-green-400">Clear</span>
                   <div className="text-[10px] text-slate-500 mt-0.5">No rain in forecast</div>
@@ -385,6 +391,13 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
               </div>
               <div className="text-[10px] text-slate-500 mt-0.5">forecast total</div>
             </div>
+          </div>
+
+          <div className="text-xs text-slate-300 px-1">
+            {dayGroups.slice(0, 3).map((dg, i) => {
+              const sum = hours.slice(dg.startIdx, dg.endIdx + 1).reduce((s, h) => s + h.precip, 0);
+              return <span key={dg.dateKey}>{i > 0 && ' • '}{['Today', 'Tomo', 'Day3'][i]} <b className="text-sky-300">{sum.toFixed(1)}mm</b></span>;
+            })}
           </div>
 
           <div className={`rounded-lg px-3 py-2 text-xs flex items-center gap-2 border ${totalForecast > 100 ? 'bg-red-500/10 border-red-500/40 text-red-200' : 'bg-slate-800/60 border-slate-700/50 text-slate-300'}`}>
@@ -446,9 +459,11 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
                       <title>{tip}</title>
                       <rect x={padL + i * barSlot} y={padT} width={barSlot} height={plotH} fill="transparent" />
                       <rect x={bx} y={by} width={bw} height={barH} rx={0.5} fill={precipBarColor(h.precip)} opacity={h.isPast ? 0.5 : 0.9} stroke={isPeak ? '#fbbf24' : undefined} strokeWidth={isPeak ? 1.5 : undefined} />
-                      {isPeak && (
+                      {isPeak ? (
                         <text x={padL + i * barSlot + barSlot / 2} y={by - 4} textAnchor="middle" fill="#fbbf24" style={{ fontSize: 9, fontWeight: 700 }}>Peak {h.precip.toFixed(1)}</text>
-                      )}
+                      ) : h.precip > 0.5 && h.prob > 20 ? (
+                        <text x={padL + i * barSlot + barSlot / 2} y={by - 3} textAnchor="middle" className="fill-slate-400" style={{ fontSize: 7 }}>{h.prob}%</text>
+                      ) : null}
                     </g>
                   );
                 })}
@@ -475,7 +490,7 @@ function PrecipitationTracker({ location }: { location: GeoLocation | null }) {
 
           <div className="text-[10px] text-slate-500 px-1 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Live precipitation from Open-Meteo &bull; hourly resolution &bull; 1 day past + 3 day forecast &bull; auto-refreshes every 5 minutes
+            Live precipitation from Open-Meteo &bull; hourly resolution &bull; 3-day forecast &bull; auto-refreshes every 5 minutes
           </div>
         </>
       )}

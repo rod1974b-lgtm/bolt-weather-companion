@@ -116,7 +116,7 @@ export async function fetchPrecipitationNearby(
     `${OPEN_METEO_URL}?latitude=${lat}&longitude=${lon}` +
     `&current=precipitation,precipitation_probability` +
     `&hourly=precipitation,precipitation_probability` +
-    `&past_days=1&forecast_days=3&timezone=auto`;
+    `&past_days=0&forecast_days=3&timezone=auto`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Precipitation API error: ${res.status}`);
