@@ -1876,14 +1876,48 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   );
 }
 
+type HurricaneFilter = 'thailand' | 'asia' | 'all';
+
+function getCompassBearing(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(dLon) * Math.cos((lat2 * Math.PI) / 180);
+  const x =
+    Math.cos((lat1 * Math.PI) / 180) * Math.sin((lat2 * Math.PI) / 180) -
+    Math.sin((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.cos(dLon);
+  let brng = (Math.atan2(y, x) * 180) / Math.PI;
+  brng = (brng + 360) % 360;
+  const dirs = ['North', 'Northeast', 'East', 'Southeast', 'South', 'Southwest', 'West', 'Northwest'];
+  return dirs[Math.round(brng / 45) % 8] ?? 'East';
+}
+
+function getStormCategoryBadge(category: string, intensityKts: number): { label: string; bg: string; text: string; border: string } {
+  const catNum = parseInt(category, 10);
+  if (!isNaN(catNum) && catNum >= 4) {
+    return { label: `SUPER TYPHOON (CAT ${catNum})`, bg: 'bg-purple-500/20', text: 'text-purple-300', border: 'border-purple-500/50' };
+  }
+  if (!isNaN(catNum) && catNum >= 3) {
+    return { label: `MAJOR TYPHOON (CAT ${catNum})`, bg: 'bg-red-500/20', text: 'text-red-300', border: 'border-red-500/50' };
+  }
+  if (!isNaN(catNum) && catNum >= 1) {
+    return { label: `TYPHOON (CAT ${catNum})`, bg: 'bg-amber-500/20', text: 'text-amber-300', border: 'border-amber-500/50' };
+  }
+  if (intensityKts >= 34) {
+    return { label: 'TROPICAL STORM', bg: 'bg-sky-500/20', text: 'text-sky-300', border: 'border-sky-500/50' };
+  }
+  return { label: 'TROPICAL DEPRESSION', bg: 'bg-blue-500/20', text: 'text-blue-300', border: 'border-blue-500/50' };
+}
+
 function HurricaneTracker({ location }: { location: GeoLocation | null }) {
   const [storms, setStorms] = useState<TropicalStorm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [filter, setFilter] = useState<HurricaneFilter>('thailand');
   const [, setNowTick] = useState(0);
-  const lat = location?.latitude ?? 13.9642;
-  const lon = location?.longitude ?? 99.9445;
+
+  const lat = location?.latitude ?? 13.54;
+  const lon = location?.longitude ?? 99.82;
+  const locName = location?.name ?? 'Ratchaburi';
 
   useEffect(() => {
     let mounted = true;
@@ -1891,81 +1925,242 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
     const load = () => {
       setError(null);
       fetchTropicalStorms()
-        .then((data) => { if (mounted) { setStorms(data); setFetchedAt(Date.now()); } })
-        .catch((e: Error) => { if (mounted) { setError(e.message); setStorms([]); } })
-        .finally(() => { if (mounted) setLoading(false); });
+        .then((data) => {
+          if (mounted) {
+            setStorms(data);
+            setFetchedAt(Date.now());
+          }
+        })
+        .catch((e: Error) => {
+          if (mounted) {
+            setError(e.message);
+            setStorms([]);
+          }
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
     };
     load();
     const t = setInterval(() => setNowTick((n) => n + 1), 30000);
     const r = setInterval(load, 5 * 60 * 1000);
-    return () => { mounted = false; clearInterval(t); clearInterval(r); };
+    return () => {
+      mounted = false;
+      clearInterval(t);
+      clearInterval(r);
+    };
   }, []);
 
   const stormsWithDistance = storms
-    .map((s) => ({ ...s, distanceKm: haversineKm(lat, lon, s.latitude, s.longitude) }))
+    .map((s) => ({
+      ...s,
+      distanceKm: haversineKm(lat, lon, s.latitude, s.longitude),
+      bearing: getCompassBearing(lat, lon, s.latitude, s.longitude),
+      speedKmh: Math.round(s.intensityMph * 1.60934),
+    }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
-  const nearbyStorms = stormsWithDistance.filter((s) => s.distanceKm < 3000);
-  const otherStorms = stormsWithDistance.filter((s) => s.distanceKm >= 3000);
+
+  // Storm classification relative to Thailand
+  const nearestStorm = stormsWithDistance[0];
+  const stormsUnder1500km = stormsWithDistance.filter((s) => s.distanceKm <= 1500);
+  const stormsUnder2500km = stormsWithDistance.filter((s) => s.distanceKm <= 2500);
+
+  const filteredStorms =
+    filter === 'thailand'
+      ? stormsUnder2500km
+      : filter === 'asia'
+      ? stormsWithDistance.filter((s) => s.basin === 'Western Pacific' || s.basin === 'Indian Ocean')
+      : stormsWithDistance;
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900 min-h-[600px] flex flex-col overflow-hidden">
-      <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
-        <span className="text-sm text-white font-bold flex items-center gap-2"><Wind size={16} className="text-sky-400" />Hurricane &amp; Typhoon Tracker LIVE</span>
-        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/20 text-green-300 border border-green-500/30">
-          {loading ? 'Loading...' : `${storms.length} active${fetchedAt ? ` • Updated ${fmtAgo(fetchedAt)}` : ''}`}
+    <div className="space-y-4">
+      {/* Header bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-sky-400 animate-pulse shadow-sm shadow-sky-500" />
+          <span className="text-sm text-white font-bold tracking-wide">
+            HURRICANE &amp; TYPHOON RADAR &bull; {locName}
+          </span>
+        </div>
+        <span className="text-xs text-slate-400 font-medium">
+          {loading ? 'Refreshing...' : `${storms.length} active globally${fetchedAt ? ` • Updated ${fmtAgo(fetchedAt)}` : ''}`}
         </span>
       </div>
-      <div className="flex-1 p-3 bg-slate-900 space-y-3 overflow-y-auto">
-        <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
-          <div className="p-2 bg-slate-800 text-xs text-white font-medium">Western Pacific &bull; Typhoons near Thailand</div>
-          <div className="p-3">
-            {loading && (
-              <div className="flex items-center justify-center py-10 text-slate-400">
-                <Loader2 size={20} className="animate-spin mr-2" />
-                <span className="text-sm">Fetching live storm data...</span>
-              </div>
-            )}
-            {error && !loading && (
-              <ProxyErrorBanner message={error} mapUrl={`https://zoom.earth/storms/`} mapLabel="Open Storm Map" />
-            )}
-            {!loading && !error && storms.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <CheckCircle2 size={32} className="text-green-400 mb-2" />
-                <p className="text-sm font-medium text-slate-200">No active cyclones</p>
-                <p className="text-xs text-slate-500 mt-1">No active tropical storms reported in any basin.</p>
-              </div>
-            )}
-            {!loading && !error && nearbyStorms.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-[11px] text-amber-300 font-medium flex items-center gap-1"><AlertTriangle size={12} /> Near {location?.name ?? 'Ratchaburi'} (within 3000km)</div>
-                {nearbyStorms.map((s) => <StormCard key={s.id} storm={s} />)}
-              </div>
-            )}
-            {!loading && !error && otherStorms.length > 0 && (
-              <div className="space-y-2 mt-3">
-                {nearbyStorms.length > 0 && <div className="text-[11px] text-slate-400 font-medium pt-2 border-t border-slate-700/50">Other active storms</div>}
-                {otherStorms.map((s) => <StormCard key={s.id} storm={s} />)}
-              </div>
-            )}
+
+      {/* Error Banner */}
+      {error && !loading && (
+        <ProxyErrorBanner message={error} mapUrl="https://zoom.earth/storms/" mapLabel="Open Live Storm Map" />
+      )}
+
+      {/* Status Hero Banner */}
+      {!loading && !error && (
+        <div
+          className={`rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md ${
+            stormsUnder1500km.length > 0
+              ? 'bg-red-500/15 border-red-500/50 text-red-200'
+              : stormsUnder2500km.length > 0
+              ? 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+              : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+          }`}
+        >
+          <div>
+            <div className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider mb-1.5 border border-current/30">
+              {stormsUnder1500km.length > 0
+                ? '⚠️ DIRECT MONSOON THREAT'
+                : stormsUnder2500km.length > 0
+                ? '⚡ REGIONAL ADVISORY'
+                : '✅ ALL CLEAR — THAILAND'}
+            </div>
+            <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
+              {stormsUnder1500km.length > 0
+                ? `Active System: ${stormsUnder1500km[0]?.name} (${Math.round(stormsUnder1500km[0]?.distanceKm ?? 0).toLocaleString()} km)`
+                : stormsUnder2500km.length > 0
+                ? `Tropical System Developing in ${stormsUnder2500km[0]?.basin}`
+                : `No Tropical Cyclones Threatening Thailand`}
+            </h2>
+            <p className="text-sm font-medium text-slate-200/90 mt-0.5">
+              {nearestStorm
+                ? `Nearest system is ${nearestStorm.name} (${Math.round(nearestStorm.distanceKm).toLocaleString()} km ${nearestStorm.bearing} of ${locName} in ${nearestStorm.basin}).`
+                : `Atmospheric circulation over the Gulf of Thailand and Andaman Sea is calm with zero active storms.`}
+            </p>
+          </div>
+
+          <div className="shrink-0 bg-slate-900/60 rounded-xl px-4 py-2.5 border border-slate-700/60 text-right">
+            <span className="text-[11px] uppercase tracking-wider text-slate-400 font-bold block">Nearest Storm</span>
+            <span className={`text-2xl font-black ${stormsUnder2500km.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {nearestStorm ? `${Math.round(nearestStorm.distanceKm).toLocaleString()} km` : 'None'}
+            </span>
           </div>
         </div>
+      )}
 
-        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/50">
-          <summary className="p-2 bg-slate-800 text-xs text-white font-medium cursor-pointer">Atlantic &bull; NHC <span className="text-slate-400 font-normal">&bull; out of coverage for Ratchaburi</span></summary>
-          <img src="https://www.nhc.noaa.gov/xgtwo/two_atl_0d0.png" alt="Atlantic Tropical Outlook" loading="lazy" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        </details>
-        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/50">
-          <summary className="p-2 bg-slate-800 text-xs text-white font-medium cursor-pointer">East Pacific &bull; NHC <span className="text-slate-400 font-normal">&bull; out of coverage for Ratchaburi</span></summary>
-          <img src="https://www.nhc.noaa.gov/xgtwo/two_pac_0d0.png" alt="Pacific Tropical Outlook" loading="lazy" className="w-full h-[260px] object-contain bg-slate-900" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+      {/* Basin & Distance Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-700/80">
+          <button
+            type="button"
+            onClick={() => setFilter('thailand')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              filter === 'thailand'
+                ? 'bg-sky-500 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🇹🇭 Thailand Watch ({stormsUnder2500km.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('asia')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              filter === 'asia'
+                ? 'bg-sky-500 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🌏 Western Pacific &amp; Asia
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              filter === 'all'
+                ? 'bg-sky-500 text-white shadow'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🌐 All Global ({storms.length})
+          </button>
+        </div>
+
+        <span className="text-xs text-slate-400">
+          Showing <strong className="text-white">{filteredStorms.length}</strong> storm{filteredStorms.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      {/* Loading Spinner */}
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+          <Loader2 size={32} className="animate-spin mb-3 text-sky-400" />
+          <span className="text-base font-semibold">Tracking global tropical storms &amp; typhoons...</span>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && !error && filteredStorms.length === 0 && (
+        <div className="rounded-2xl border border-slate-700 bg-slate-850/60 p-8 text-center space-y-2">
+          <CheckCircle2 size={40} className="mx-auto text-emerald-400" />
+          <h3 className="text-lg font-bold text-white">No Active Storms in this Basin</h3>
+          <p className="text-sm text-slate-400 max-w-md mx-auto">
+            {filter === 'thailand'
+              ? `No tropical depressions or typhoons detected within 2,500 km of ${locName}. Try selecting "Western Pacific & Asia" or "All Global".`
+              : 'Zero active tropical cyclones reported by the National Hurricane Center and Joint Typhoon Warning Center.'}
+          </p>
+        </div>
+      )}
+
+      {/* Storm Cards List */}
+      {!loading && !error && filteredStorms.length > 0 && (
+        <div className="space-y-3">
+          {filteredStorms.map((s) => (
+            <StormCard key={s.id} storm={s} locName={locName} />
+          ))}
+        </div>
+      )}
+
+      {/* Atlantic & Pacific Outlook Collapsible (NHC Satellite Products) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/60">
+          <summary className="p-3 bg-slate-800 text-xs text-slate-200 font-bold cursor-pointer hover:bg-slate-750 flex items-center justify-between">
+            <span>Atlantic Basin &bull; 7-Day NHC Outlook</span>
+            <span className="text-[11px] text-slate-400 font-normal">Out of coverage for Thailand</span>
+          </summary>
+          <img
+            src="https://www.nhc.noaa.gov/xgtwo/two_atl_0d0.png"
+            alt="Atlantic Tropical Outlook"
+            loading="lazy"
+            className="w-full h-[220px] object-contain bg-slate-900"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
         </details>
 
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <span className="text-[10px] text-slate-400 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Live data via hurricane-tracker &bull; storm details update every 6h
-          </span>
-          <a href={`https://www.windy.com/?hurricaneTracker,${lat},${lon},5`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-full bg-sky-600 text-white text-xs flex items-center gap-1 hover:bg-sky-500">
-            Open Full Map <ExternalLink size={10} />
+        <details className="rounded-xl overflow-hidden border border-slate-700 bg-slate-800/60">
+          <summary className="p-3 bg-slate-800 text-xs text-slate-200 font-bold cursor-pointer hover:bg-slate-750 flex items-center justify-between">
+            <span>East Pacific Basin &bull; 7-Day NHC Outlook</span>
+            <span className="text-[11px] text-slate-400 font-normal">Out of coverage for Thailand</span>
+          </summary>
+          <img
+            src="https://www.nhc.noaa.gov/xgtwo/two_pac_0d0.png"
+            alt="Pacific Tropical Outlook"
+            loading="lazy"
+            className="w-full h-[220px] object-contain bg-slate-900"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        </details>
+      </div>
+
+      {/* Footer Info & Official Early Warning Links */}
+      <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 text-xs text-slate-300 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Live data via NOAA ATCF &amp; JTWC &bull; storm positions refresh every 5 min</span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <a
+            href="https://www.metoc.navy.mil/jtwc/jtwc.html"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1"
+          >
+            JTWC Advisories <ExternalLink size={11} />
+          </a>
+          <span className="text-slate-600">&bull;</span>
+          <a
+            href={`https://www.windy.com/?hurricaneTracker,${lat},${lon},5`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline font-semibold flex items-center gap-1"
+          >
+            Open Windy Cyclone Map <ExternalLink size={11} />
           </a>
         </div>
       </div>
@@ -1973,30 +2168,84 @@ function HurricaneTracker({ location }: { location: GeoLocation | null }) {
   );
 }
 
-function StormCard({ storm }: { storm: TropicalStorm & { distanceKm: number } }) {
-  const categoryColor = storm.category !== '—' && storm.category !== ''
-    ? 'text-red-300 bg-red-500/15 border-red-500/40'
-    : 'text-sky-300 bg-sky-500/15 border-sky-500/40';
+function StormCard({
+  storm,
+  locName,
+}: {
+  storm: TropicalStorm & { distanceKm: number; bearing: string; speedKmh: number };
+  locName: string;
+}) {
+  const badge = getStormCategoryBadge(storm.category, storm.intensityKts);
+  const isClose = storm.distanceKm <= 2000;
 
   return (
-    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${categoryColor}`}>
-          <Wind size={18} />
-        </div>
-        <div>
-          <div className="text-sm text-white font-medium">
-            {storm.name} {storm.category !== '—' && storm.category !== '' && `(${storm.category})`}
+    <div
+      className={`rounded-2xl border p-4 transition shadow-sm ${
+        isClose
+          ? 'bg-slate-800/90 border-amber-500/40 hover:border-amber-400/60'
+          : 'bg-slate-800/70 border-slate-700 hover:border-slate-600'
+      }`}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Left: Storm Name and Category */}
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400 shadow-sm mt-0.5">
+            <Wind size={22} />
           </div>
-          <div className="text-xs text-slate-400">
-            {storm.type} &bull; {storm.basin} &bull; {Math.round(storm.distanceKm).toLocaleString()}km away
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-lg sm:text-xl font-black text-white">{storm.name}</h3>
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${badge.bg} ${badge.text} ${badge.border}`}>
+                {badge.label}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Basin: <strong className="text-slate-200">{storm.basin}</strong> &bull; System: <span className="text-slate-300">{storm.type}</span> &bull; Coordinates: {storm.latitude.toFixed(1)}°N, {storm.longitude.toFixed(1)}°E
+            </p>
+          </div>
+        </div>
+
+        {/* Right: Wind Speed in km/h */}
+        <div className="sm:text-right bg-slate-900/60 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border border-slate-700/40 sm:border-0 flex sm:flex-col justify-between items-center sm:items-end">
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-white leading-tight">
+              {storm.speedKmh} <span className="text-sm font-semibold text-sky-400">km/h</span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-medium">
+              {storm.intensityKts} knots &bull; {storm.intensityMph} mph
+            </div>
           </div>
         </div>
       </div>
-      <div className="text-right">
-        <div className="text-sm font-bold text-white">{storm.intensityMph} mph</div>
-        <div className="text-xs text-slate-400">
-          {storm.pressureMb > 0 ? `${storm.pressureMb} mb` : '—'} &bull; {storm.movement || '—'}
+
+      {/* Info Pill Badges: Distance from Ratchaburi, Pressure, Movement */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-700/60 text-xs">
+        <div className="rounded-xl bg-slate-900/80 border border-slate-700/80 p-2.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Distance from {locName}</span>
+          <span className={`text-sm font-extrabold ${isClose ? 'text-amber-300' : 'text-white'}`}>
+            {Math.round(storm.distanceKm).toLocaleString()} km
+          </span>
+          <span className="text-[11px] text-slate-400 block mt-0.5">{storm.bearing}</span>
+        </div>
+
+        <div className="rounded-xl bg-slate-900/80 border border-slate-700/80 p-2.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Central Pressure</span>
+          <span className="text-sm font-extrabold text-white">
+            {storm.pressureMb > 0 ? `${storm.pressureMb} hPa` : 'Unknown'}
+          </span>
+          <span className="text-[11px] text-slate-400 block mt-0.5">
+            {storm.pressureMb > 0 && storm.pressureMb < 960 ? 'Deep Low (Intense)' : 'Barometric MSLP'}
+          </span>
+        </div>
+
+        <div className="col-span-2 sm:col-span-1 rounded-xl bg-slate-900/80 border border-slate-700/80 p-2.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Track &amp; Movement</span>
+          <span className="text-sm font-extrabold text-white">
+            {storm.movement ? storm.movement : 'Stationary'}
+          </span>
+          <span className="text-[11px] text-slate-400 block mt-0.5">
+            {storm.speedMph > 0 ? `Speed: ${Math.round(storm.speedMph * 1.60934)} km/h` : 'Slow drift'}
+          </span>
         </div>
       </div>
     </div>
