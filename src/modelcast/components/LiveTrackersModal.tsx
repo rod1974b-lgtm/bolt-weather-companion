@@ -1719,21 +1719,33 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
       >
         <div>
           <div className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider mb-1.5 border border-current/30">
-            {tsunamiEvent
+            {quakeRegion === 'americas'
+              ? '🌎 AMERICAS SEISMIC FEED'
+              : quakeRegion === 'global'
+              ? '🌍 GLOBAL RING OF FIRE'
+              : tsunamiEvent
               ? '🌊 TSUNAMI ADVISORY'
               : highestFelt
               ? '⚠️ NOTICED IN CENTRAL THAILAND'
               : '✅ SEISMICALLY CALM'}
           </div>
           <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
-            {tsunamiEvent
+            {quakeRegion !== 'local'
+              ? strongest
+                ? `Strongest: M${strongest.mag} ${strongest.properties.place}`
+                : 'No significant quakes in the past 24h'
+              : tsunamiEvent
               ? `Tsunami Bulletin: M${tsunamiEvent.mag} ${tsunamiEvent.properties.place}`
               : highestFelt
               ? `M${highestFelt.mag} ${highestFelt.properties.place} (${highestFelt.dist} km)`
               : `No Noticeable Earthquakes in ${locName}`}
           </h2>
           <p className="text-sm font-medium text-slate-200/90 mt-0.5">
-            {highestFelt
+            {quakeRegion === 'americas'
+              ? 'Live USGS feed across North & South America. Tap any pin for the full bulletin.'
+              : quakeRegion === 'global'
+              ? 'All M2.5+ earthquakes worldwide in the past 24 hours from the USGS global network.'
+              : highestFelt
               ? `Tremor may have caused high-rise swaying in Central Thailand. Epicenter ${highestFelt.dist} km away.`
               : strongest
               ? `Nearest recent activity: M${strongest.mag} near ${strongest.properties.place} (${strongest.dist} km away, safe).`
@@ -1749,28 +1761,50 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
         </div>
       </div>
 
+      {/* Region Tabs */}
+      <div className="flex gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 w-fit">
+        {([
+          { id: 'local' as QuakeRegion, label: `Local ${locName}` },
+          { id: 'americas' as QuakeRegion, label: 'Americas (N & S)' },
+          { id: 'global' as QuakeRegion, label: 'Global Overview' },
+        ]).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => setQuakeRegion(r.id)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              quakeRegion === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {/* Scope & Magnitude Filter Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-900/90 p-2.5 rounded-2xl border border-slate-800 shadow-sm">
-        {/* Radius Pills */}
-        <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
-          <span className="text-xs font-bold text-slate-400 px-2">Scope:</span>
-          {[
-            { id: 300, label: 'Local (300 km)' },
-            { id: 1000, label: 'Regional (1,000 km)' },
-            { id: 2000, label: 'Wide (2,000 km)' },
-          ].map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setRadiusKm(r.id)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                radiusKm === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        {/* Radius Pills (local view only) */}
+        {quakeRegion === 'local' && (
+          <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
+            <span className="text-xs font-bold text-slate-400 px-2">Scope:</span>
+            {[
+              { id: 300, label: 'Local (300 km)' },
+              { id: 1000, label: 'Regional (1,000 km)' },
+              { id: 2000, label: 'Wide (2,000 km)' },
+            ].map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRadiusKm(r.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  radiusKm === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Magnitude Filter Pills */}
         <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
@@ -1804,6 +1838,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
         onPin={handleSelectPin}
         zoom={zoom}
         onZoomChange={setZoom}
+        showHomeAndRadius={quakeRegion === 'local'}
       />
 
       {/* Selected Quake Inspector Card */}
