@@ -2537,10 +2537,15 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     }
   }
 
+  // Antimeridian-aware projection: wrap longitude into the 360° window
+  // centered on the active region so strikes near ±180° plot on-screen.
   const strikePos = (lat: number, lon: number) => {
-    const p = worldPx(lat, lon, zoom);
+    const cLon = activeConfig.center.lon;
+    const wrappedLon = cLon + (((lon - cLon + 540) % 360) - 180);
+    const p = worldPx(lat, wrappedLon, zoom);
     return { x: p.x - centerPx.x, y: p.y - centerPx.y };
   };
+  const isBroadView = zoom <= 3;
 
   const userPoint = strikePos(userLat, userLon);
   const mpp = (156543.03 * Math.cos((userLat * Math.PI) / 180)) / n;
