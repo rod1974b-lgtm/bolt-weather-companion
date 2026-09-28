@@ -1522,12 +1522,20 @@ function OsmMiniMap({
         </button>
         <button
           type="button"
-          onClick={() => onZoomChange(Math.max(3, zoom - 1))}
-          disabled={zoom <= 3}
+          onClick={() => onZoomChange(Math.max(2, zoom - 1))}
+          disabled={zoom <= 2}
           className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-base disabled:opacity-40"
           title="Zoom Out"
         >
           −
+        </button>
+        <button
+          type="button"
+          onClick={() => onZoomChange(4)}
+          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px]"
+          title="Recenter"
+        >
+          ⌂
         </button>
       </div>
 
@@ -1910,6 +1918,8 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     </div>
   );
 }
+
+type QuakeRegion = 'local' | 'americas' | 'global';
 
 type HurricaneFilter = 'thailand' | 'asia' | 'all';
 
