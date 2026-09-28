@@ -2659,6 +2659,7 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
               top: `calc(50% + ${t.y}px)`,
               width: TILE,
               height: TILE,
+              filter: 'invert(100%) hue-rotate(190deg) contrast(115%) brightness(78%) saturate(75%)',
             }}
           />
         ))}
@@ -2693,33 +2694,36 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
           </>
         )}
 
-        {/* User / Ratchaburi Pin */}
-        <div
-          className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-blue-600 border-2 border-white shadow-xl pointer-events-none z-20 flex items-center justify-center"
-          style={{
-            left: `calc(50% + ${userPoint.x}px)`,
-            top: `calc(50% + ${userPoint.y}px)`,
-          }}
-          title="Ratchaburi (Center)"
-        >
-          <div className="w-10 h-10 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
-          <span className="absolute left-6 whitespace-nowrap text-xs font-black px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-200 border border-blue-500/50 shadow">
-            Ratchaburi
-          </span>
-        </div>
+        {/* User / Ratchaburi Pin (local & Asia views only) */}
+        {(region === 'nearby' || region === 'asia') && (
+          <div
+            className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-blue-600 border-2 border-white shadow-xl pointer-events-none z-20 flex items-center justify-center"
+            style={{
+              left: `calc(50% + ${userPoint.x}px)`,
+              top: `calc(50% + ${userPoint.y}px)`,
+            }}
+            title="Ratchaburi (Center)"
+          >
+            <div className="w-10 h-10 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
+            <span className="absolute left-6 whitespace-nowrap text-xs font-black px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-200 border border-blue-500/50 shadow">
+              Ratchaburi
+            </span>
+          </div>
+        )}
         {(REGION_DOTS[region]||[]).map(d=>{const pt=strikePos(d.lat,d.lon);return <div key={d.name} className="absolute z-10 pointer-events-none px-1.5 py-0.5 rounded bg-slate-900/85 border border-slate-600 text-[10px] font-bold text-slate-200" style={{left:`calc(50% + ${pt.x}px)`,top:`calc(50% + ${pt.y}px)`,transform:'translate(-50%,-130%)'}}>{d.name}</div>})}
         {/* Live Strike Flashes over Map */}
         {/* Live Strike Flashes over Map */}
         {regionalStrikes.map((s, idx) => {
           const pt = strikePos(s.lat, s.lon);
           let bgCol = 'bg-purple-500 border-purple-200';
-          let size = 'w-3 h-3 -ml-1.5 -mt-1.5';
+          // Zoom-scaled dots: smaller on broad Americas/Global views
+          let size = isBroadView ? 'w-1.5 h-1.5 -ml-0.75 -mt-0.75' : 'w-3 h-3 -ml-1.5 -mt-1.5';
           if (s.ageSec < 60) {
             bgCol = 'bg-white border-yellow-300 ring-4 ring-yellow-400/60 animate-pulse';
-            size = 'w-4 h-4 -ml-2 -mt-2';
+            size = isBroadView ? 'w-2.5 h-2.5 -ml-1.25 -mt-1.25' : 'w-4 h-4 -ml-2 -mt-2';
           } else if (s.ageSec < 300) {
             bgCol = 'bg-amber-400 border-amber-100 ring-2 ring-amber-400/40';
-            size = 'w-3.5 h-3.5 -ml-1.75 -mt-1.75';
+            size = isBroadView ? 'w-2 h-2 -ml-1 -mt-1' : 'w-3.5 h-3.5 -ml-1.75 -mt-1.75';
           } else if (s.ageSec < 600) {
             bgCol = 'bg-orange-500 border-orange-200';
           }
