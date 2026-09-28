@@ -3,8 +3,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/modelcast/lib/supabase';
 import type { GeoLocation, CurrentWeather } from '@/modelcast/lib/types';
+import ObservationImagePicker from '@/modelcast/components/ObservationImagePicker';
 
-type WeatherChange = { time: string; condition: string; severity: string };
+type WeatherChange = { time: string; condition: string; severity: string; photo?: string };
 
 const CONDITIONS = [
   { id: 'sunny', label: 'Sunny (0-10%)', emoji: '☀️', severity: 1, group: 'Clear', level: 'light' },
@@ -198,6 +199,7 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
                   {SEVERITY.map(s=><option key={s.id} value={s.id}>{s.label.toUpperCase()}</option>)}
                 </select>
                 <span style={{ color:'#64748b', fontSize:'10px' }}>Sev {cond?.severity}/29</span>
+                <ObservationImagePicker value={(ch as any).photo} onChange={(url)=>{ const c=[...changes]; (c[idx] as any).photo=url; setChanges([...c]); }} />
                 <button onClick={()=>{ if(changes.length>1) setChanges(changes.filter((_,i)=>i!==idx)); }} disabled={changes.length===1} style={{ padding:'6px 10px', background: changes.length===1 ? '#334155' : '#7f1d1d', color:'white', border:'none', borderRadius:'6px', cursor: changes.length===1 ? 'not-allowed' : 'pointer', opacity: changes.length===1 ? 0.5 : 1 }}>✕</button>
               </div>
             );
@@ -205,7 +207,8 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
           {changes.length>1 && (
             <div style={{ marginTop:'10px', padding:'8px', background:'rgba(34,197,94,0.1)', borderRadius:'8px', border:'1px dashed #22c55e' }}>
               <div style={{ color:'#22c55e', fontSize:'11px', fontWeight:'bold' }}>Timeline Preview ({changes.length} observations):</div>
-              <div style={{ color:'white', fontSize:'12px', marginTop:'4px' }}>{changes.map((c,i)=>{ const cond=CONDITIONS.find(x=>x.id===c.condition); return <span key={i}>{i>0 && ' → '}{c.time} {cond?.emoji} {cond?.label.split(' ')[0]}[{c.severity}]</span>; })}</div>
+              <div style={{ color:'white', fontSize:'12px', marginTop:'4px' }}>{changes.map((c,i)=>{ const cond=CONDITIONS.find(x=>x.id===c.condition); return <span key={i}>{i>0 && ' → '}{c.time} {cond?.emoji} {cond?.label.split(' ')[0]}[{c.severity}]{(c as any).photo ? ' 📷' : ''}</span>; })}</div>
+              {(changes as any[]).some(c=>c.photo) && <div style={{ display:'flex', gap:'6px', marginTop:'8px' }}>{(changes as any[]).map((c,i)=> c.photo ? <img key={i} src={c.photo} alt="" style={{ height:'44px', width:'44px', objectFit:'cover', borderRadius:'8px', border:'1px solid #22c55e' }} /> : null)}</div>}
             </div>
           )}
         </div>
@@ -234,7 +237,7 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
                 </div>
               </div>
               <div style={{ color:'white', fontSize:'13px', marginTop:'8px', fontWeight:'bold' }}>{log.timeline || CONDITIONS.find(c=>c.id===log.condition)?.emoji + ' ' + log.condition}</div>
-              {log.changes && <div style={{ marginTop:'8px', display:'flex', flexDirection:'column', gap:'4px' }}>{log.changes.map((ch:any,i:number)=>{ const c=CONDITIONS.find(x=>x.id===ch.condition); const col2=SEVERITY.find(s=>s.id===ch.severity)?.color; return <div key={i} style={{ fontSize:'12px', display:'flex', gap:'8px', alignItems:'center' }}><span style={{ color:'#64748b' }}>{ch.time}</span><span>{c?.emoji} {c?.label} (Sev {c?.severity}/29)</span><span style={{ background:col2+'30', color:col2, padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:'bold', border:'1px solid ' + col2 }}>{ch.severity.toUpperCase()}</span></div>; })}</div>}
+              {log.changes && <div style={{ marginTop:'8px', display:'flex', flexDirection:'column', gap:'4px' }}>{log.changes.map((ch:any,i:number)=>{ const c=CONDITIONS.find(x=>x.id===ch.condition); const col2=SEVERITY.find(s=>s.id===ch.severity)?.color; return <div key={i} style={{ fontSize:'12px', display:'flex', gap:'8px', alignItems:'center' }}><span style={{ color:'#64748b' }}>{ch.time}</span>{ch.photo && <img src={ch.photo} alt="" style={{ height:'32px', width:'32px', objectFit:'cover', borderRadius:'6px', border:'1px solid #475569' }} />}<span>{c?.emoji} {c?.label} (Sev {c?.severity}/29)</span><span style={{ background:col2+'30', color:col2, padding:'2px 8px', borderRadius:'10px', fontSize:'10px', fontWeight:'bold', border:'1px solid ' + col2 }}>{ch.severity.toUpperCase()}</span></div>; })}</div>}
               {log.note && <div style={{ color:'#94a3b8', fontSize:'12px', marginTop:'6px' }}>{log.note}</div>}
             </div>
           );
