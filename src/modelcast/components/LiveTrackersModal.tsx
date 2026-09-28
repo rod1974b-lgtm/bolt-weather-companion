@@ -1335,7 +1335,7 @@ function SatelliteTracker() {
 
         <div className="flex items-center gap-2 ml-auto">
           <a
-            href="https://weather.tmd.go.th/bma.php"
+            href="https://weather.tmd.go.th/"
             target="_blank"
             rel="noreferrer"
             className="px-3 py-1.5 rounded-xl bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-600/30"
@@ -2774,7 +2774,7 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
             LightningMaps.org <ExternalLink className="h-3 w-3" />
           </a>
           <a
-            href="https://weather.tmd.go.th/bma.php"
+            href="https://weather.tmd.go.th/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sky-400 hover:underline flex items-center gap-1"
