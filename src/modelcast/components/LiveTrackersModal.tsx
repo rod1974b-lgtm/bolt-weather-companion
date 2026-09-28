@@ -1554,6 +1554,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const [radiusKm, setRadiusKm] = useState<number>(1000); // 300km, 1000km, 2000km
   const [minMag, setMinMag] = useState<number>(2.5); // 2.5, 4.0, 5.0
   const [zoom, setZoom] = useState<number>(4);
+  const [quakeRegion, setQuakeRegion] = useState<QuakeRegion>('local');
 
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
@@ -1568,18 +1569,41 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     return () => clearInterval(t);
   }, []);
 
-  // Recenter map if location or radius changes
+  // Recenter map when region, location, or local radius changes
   useEffect(() => {
-    setCenter({ lat, lon });
-    if (radiusKm <= 300) setZoom(6);
-    else if (radiusKm <= 1000) setZoom(4);
-    else setZoom(3);
-  }, [lat, lon, radiusKm]);
+    if (quakeRegion === 'americas') {
+      setCenter({ lat: 22, lon: -95 });
+      setZoom(3);
+    } else if (quakeRegion === 'global') {
+      setCenter({ lat: 15, lon: 10 });
+      setZoom(2);
+    } else {
+      setCenter({ lat, lon });
+      if (radiusKm <= 300) setZoom(6);
+      else if (radiusKm <= 1000) setZoom(4);
+      else setZoom(3);
+    }
+  }, [lat, lon, radiusKm, quakeRegion]);
 
-  // Fetch earthquakes from USGS API
+  // Fetch earthquakes from USGS API (region-aware)
   useEffect(() => {
     let mounted = true;
-    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=${radiusKm}&minmagnitude=${minMag}&limit=30&orderby=time`;
+    let url: string;
+    if (quakeRegion === 'americas') {
+      // Bounding box covering North & South America
+      url =
+        `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson` +
+        `&minlatitude=-60&maxlatitude=70&minlongitude=-170&maxlongitude=-30` +
+        `&minmagnitude=${Math.max(minMag, 3.5)}&limit=50&orderby=time`;
+    } else if (quakeRegion === 'global') {
+      // USGS live CDN feed: significant/global quakes, past 24h
+      url =
+        minMag >= 4.5
+          ? 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'
+          : 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
+    } else {
+      url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=${radiusKm}&minmagnitude=${minMag}&limit=30&orderby=time`;
+    }
 
     if (qTick === 0) setLoading(true);
     setQErr(null);
@@ -1604,7 +1628,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     return () => {
       mounted = false;
     };
-  }, [lat, lon, radiusKm, minMag, qTick]);
+  }, [lat, lon, radiusKm, minMag, qTick, quakeRegion]);
 
   if (loading) {
     return (
