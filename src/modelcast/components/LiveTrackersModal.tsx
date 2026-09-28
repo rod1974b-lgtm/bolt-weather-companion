@@ -1395,6 +1395,7 @@ function OsmMiniMap({
   zoom,
   onZoomChange,
   height = 340,
+  showHomeAndRadius = true,
 }: {
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
@@ -1405,6 +1406,7 @@ function OsmMiniMap({
   zoom: number;
   onZoomChange: (newZoom: number) => void;
   height?: number;
+  showHomeAndRadius?: boolean;
 }) {
   const c = worldPx(center.lat, center.lon, zoom);
   const n = 2 ** zoom;
@@ -1427,8 +1429,11 @@ function OsmMiniMap({
     }
   }
 
+  // Antimeridian-aware projection: wrap longitude into the 360° window
+  // centered on the map center so pins near ±180° plot on-screen.
   const pos = (lat: number, lon: number) => {
-    const p = worldPx(lat, lon, zoom);
+    const wrappedLon = center.lon + (((lon - center.lon + 540) % 360) - 180);
+    const p = worldPx(lat, wrappedLon, zoom);
     return { x: p.x - c.x, y: p.y - c.y };
   };
 
@@ -1446,28 +1451,37 @@ function OsmMiniMap({
           alt=""
           draggable={false}
           className="absolute max-w-none select-none"
-          style={{ ...at(t), width: TILE, height: TILE }}
+          style={{
+            ...at(t),
+            width: TILE,
+            height: TILE,
+            filter: 'invert(100%) hue-rotate(190deg) contrast(115%) brightness(78%) saturate(75%)',
+          }}
         />
       ))}
 
-      {/* Radius boundary ring */}
-      <div
-        className="absolute rounded-full border-2 border-sky-400/80 bg-sky-500/10 pointer-events-none transition-all duration-300"
-        style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }}
-      />
+      {/* Radius boundary ring (local view only) */}
+      {showHomeAndRadius && (
+        <div
+          className="absolute rounded-full border-2 border-sky-400/80 bg-sky-500/10 pointer-events-none transition-all duration-300"
+          style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }}
+        />
+      )}
 
-      {/* Home Location Marker (Ratchaburi) */}
-      <div
-        className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
-        style={at(h)}
-        title="Ratchaburi Location"
-      >
-        <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
-      </div>
+      {/* Home Location Marker (Ratchaburi, local view only) */}
+      {showHomeAndRadius && (
+        <div
+          className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
+          style={at(h)}
+          title="Ratchaburi Location"
+        >
+          <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
+        </div>
+      )}
 
       {/* Earthquake Epicenter Pins */}
       {pins.map((p) => {
-        const size = Math.max(14, Math.min(28, p.mag * 4.5));
+        const size = zoom <= 3 ? Math.max(10, Math.min(18, p.mag * 3)) : Math.max(14, Math.min(28, p.mag * 4.5));
         const sel = p.id === selectedId;
         const color = quakeColor(p.mag);
 
