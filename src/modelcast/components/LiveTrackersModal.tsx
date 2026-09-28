@@ -1395,6 +1395,7 @@ function OsmMiniMap({
   zoom,
   onZoomChange,
   height = 340,
+  showHomeAndRadius = true,
 }: {
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
@@ -1405,6 +1406,7 @@ function OsmMiniMap({
   zoom: number;
   onZoomChange: (newZoom: number) => void;
   height?: number;
+  showHomeAndRadius?: boolean;
 }) {
   const c = worldPx(center.lat, center.lon, zoom);
   const n = 2 ** zoom;
@@ -1427,8 +1429,11 @@ function OsmMiniMap({
     }
   }
 
+  // Antimeridian-aware projection: wrap longitude into the 360° window
+  // centered on the map center so pins near ±180° plot on-screen.
   const pos = (lat: number, lon: number) => {
-    const p = worldPx(lat, lon, zoom);
+    const wrappedLon = center.lon + (((lon - center.lon + 540) % 360) - 180);
+    const p = worldPx(lat, wrappedLon, zoom);
     return { x: p.x - c.x, y: p.y - c.y };
   };
 
@@ -1446,28 +1451,37 @@ function OsmMiniMap({
           alt=""
           draggable={false}
           className="absolute max-w-none select-none"
-          style={{ ...at(t), width: TILE, height: TILE }}
+          style={{
+            ...at(t),
+            width: TILE,
+            height: TILE,
+            filter: 'invert(100%) hue-rotate(190deg) contrast(115%) brightness(78%) saturate(75%)',
+          }}
         />
       ))}
 
-      {/* Radius boundary ring */}
-      <div
-        className="absolute rounded-full border-2 border-sky-400/80 bg-sky-500/10 pointer-events-none transition-all duration-300"
-        style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }}
-      />
+      {/* Radius boundary ring (local view only) */}
+      {showHomeAndRadius && (
+        <div
+          className="absolute rounded-full border-2 border-sky-400/80 bg-sky-500/10 pointer-events-none transition-all duration-300"
+          style={{ ...at({ x: h.x - rPx, y: h.y - rPx }), width: rPx * 2, height: rPx * 2 }}
+        />
+      )}
 
-      {/* Home Location Marker (Ratchaburi) */}
-      <div
-        className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
-        style={at(h)}
-        title="Ratchaburi Location"
-      >
-        <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
-      </div>
+      {/* Home Location Marker (Ratchaburi, local view only) */}
+      {showHomeAndRadius && (
+        <div
+          className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
+          style={at(h)}
+          title="Ratchaburi Location"
+        >
+          <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
+        </div>
+      )}
 
       {/* Earthquake Epicenter Pins */}
       {pins.map((p) => {
-        const size = Math.max(14, Math.min(28, p.mag * 4.5));
+        const size = zoom <= 3 ? Math.max(10, Math.min(18, p.mag * 3)) : Math.max(14, Math.min(28, p.mag * 4.5));
         const sel = p.id === selectedId;
         const color = quakeColor(p.mag);
 
@@ -1508,12 +1522,20 @@ function OsmMiniMap({
         </button>
         <button
           type="button"
-          onClick={() => onZoomChange(Math.max(3, zoom - 1))}
-          disabled={zoom <= 3}
+          onClick={() => onZoomChange(Math.max(2, zoom - 1))}
+          disabled={zoom <= 2}
           className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-base disabled:opacity-40"
           title="Zoom Out"
         >
           −
+        </button>
+        <button
+          type="button"
+          onClick={() => onZoomChange(4)}
+          className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px]"
+          title="Recenter"
+        >
+          ⌂
         </button>
       </div>
 
@@ -1532,6 +1554,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
   const [radiusKm, setRadiusKm] = useState<number>(1000); // 300km, 1000km, 2000km
   const [minMag, setMinMag] = useState<number>(2.5); // 2.5, 4.0, 5.0
   const [zoom, setZoom] = useState<number>(4);
+  const [quakeRegion, setQuakeRegion] = useState<QuakeRegion>('local');
 
   const lat = location?.latitude ?? 13.9642;
   const lon = location?.longitude ?? 99.9445;
@@ -1546,18 +1569,41 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     return () => clearInterval(t);
   }, []);
 
-  // Recenter map if location or radius changes
+  // Recenter map when region, location, or local radius changes
   useEffect(() => {
-    setCenter({ lat, lon });
-    if (radiusKm <= 300) setZoom(6);
-    else if (radiusKm <= 1000) setZoom(4);
-    else setZoom(3);
-  }, [lat, lon, radiusKm]);
+    if (quakeRegion === 'americas') {
+      setCenter({ lat: 22, lon: -95 });
+      setZoom(3);
+    } else if (quakeRegion === 'global') {
+      setCenter({ lat: 15, lon: 10 });
+      setZoom(2);
+    } else {
+      setCenter({ lat, lon });
+      if (radiusKm <= 300) setZoom(6);
+      else if (radiusKm <= 1000) setZoom(4);
+      else setZoom(3);
+    }
+  }, [lat, lon, radiusKm, quakeRegion]);
 
-  // Fetch earthquakes from USGS API
+  // Fetch earthquakes from USGS API (region-aware)
   useEffect(() => {
     let mounted = true;
-    const url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=${radiusKm}&minmagnitude=${minMag}&limit=30&orderby=time`;
+    let url: string;
+    if (quakeRegion === 'americas') {
+      // Bounding box covering North & South America
+      url =
+        `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson` +
+        `&minlatitude=-60&maxlatitude=70&minlongitude=-170&maxlongitude=-30` +
+        `&minmagnitude=${Math.max(minMag, 3.5)}&limit=50&orderby=time`;
+    } else if (quakeRegion === 'global') {
+      // USGS live CDN feed: significant/global quakes, past 24h
+      url =
+        minMag >= 4.5
+          ? 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson'
+          : 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson';
+    } else {
+      url = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&latitude=${lat}&longitude=${lon}&maxradiuskm=${radiusKm}&minmagnitude=${minMag}&limit=30&orderby=time`;
+    }
 
     if (qTick === 0) setLoading(true);
     setQErr(null);
@@ -1582,7 +1628,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     return () => {
       mounted = false;
     };
-  }, [lat, lon, radiusKm, minMag, qTick]);
+  }, [lat, lon, radiusKm, minMag, qTick, quakeRegion]);
 
   if (loading) {
     return (
@@ -1673,21 +1719,33 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
       >
         <div>
           <div className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider mb-1.5 border border-current/30">
-            {tsunamiEvent
+            {quakeRegion === 'americas'
+              ? '🌎 AMERICAS SEISMIC FEED'
+              : quakeRegion === 'global'
+              ? '🌍 GLOBAL RING OF FIRE'
+              : tsunamiEvent
               ? '🌊 TSUNAMI ADVISORY'
               : highestFelt
               ? '⚠️ NOTICED IN CENTRAL THAILAND'
               : '✅ SEISMICALLY CALM'}
           </div>
           <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
-            {tsunamiEvent
+            {quakeRegion !== 'local'
+              ? strongest
+                ? `Strongest: M${strongest.mag} ${strongest.properties.place}`
+                : 'No significant quakes in the past 24h'
+              : tsunamiEvent
               ? `Tsunami Bulletin: M${tsunamiEvent.mag} ${tsunamiEvent.properties.place}`
               : highestFelt
               ? `M${highestFelt.mag} ${highestFelt.properties.place} (${highestFelt.dist} km)`
               : `No Noticeable Earthquakes in ${locName}`}
           </h2>
           <p className="text-sm font-medium text-slate-200/90 mt-0.5">
-            {highestFelt
+            {quakeRegion === 'americas'
+              ? 'Live USGS feed across North & South America. Tap any pin for the full bulletin.'
+              : quakeRegion === 'global'
+              ? 'All M2.5+ earthquakes worldwide in the past 24 hours from the USGS global network.'
+              : highestFelt
               ? `Tremor may have caused high-rise swaying in Central Thailand. Epicenter ${highestFelt.dist} km away.`
               : strongest
               ? `Nearest recent activity: M${strongest.mag} near ${strongest.properties.place} (${strongest.dist} km away, safe).`
@@ -1703,28 +1761,50 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
         </div>
       </div>
 
+      {/* Region Tabs */}
+      <div className="flex gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 w-fit">
+        {([
+          { id: 'local' as QuakeRegion, label: `Local ${locName}` },
+          { id: 'americas' as QuakeRegion, label: 'Americas (N & S)' },
+          { id: 'global' as QuakeRegion, label: 'Global Overview' },
+        ]).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => setQuakeRegion(r.id)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              quakeRegion === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {/* Scope & Magnitude Filter Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-900/90 p-2.5 rounded-2xl border border-slate-800 shadow-sm">
-        {/* Radius Pills */}
-        <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
-          <span className="text-xs font-bold text-slate-400 px-2">Scope:</span>
-          {[
-            { id: 300, label: 'Local (300 km)' },
-            { id: 1000, label: 'Regional (1,000 km)' },
-            { id: 2000, label: 'Wide (2,000 km)' },
-          ].map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setRadiusKm(r.id)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                radiusKm === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+        {/* Radius Pills (local view only) */}
+        {quakeRegion === 'local' && (
+          <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
+            <span className="text-xs font-bold text-slate-400 px-2">Scope:</span>
+            {[
+              { id: 300, label: 'Local (300 km)' },
+              { id: 1000, label: 'Regional (1,000 km)' },
+              { id: 2000, label: 'Wide (2,000 km)' },
+            ].map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRadiusKm(r.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  radiusKm === r.id ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Magnitude Filter Pills */}
         <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80">
@@ -1758,6 +1838,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
         onPin={handleSelectPin}
         zoom={zoom}
         onZoomChange={setZoom}
+        showHomeAndRadius={quakeRegion === 'local'}
       />
 
       {/* Selected Quake Inspector Card */}
@@ -1896,6 +1977,8 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
     </div>
   );
 }
+
+type QuakeRegion = 'local' | 'americas' | 'global';
 
 type HurricaneFilter = 'thailand' | 'asia' | 'all';
 
@@ -2454,10 +2537,15 @@ function LightningTracker({ userLat, userLon }: { userLat: number; userLon: numb
     }
   }
 
+  // Antimeridian-aware projection: wrap longitude into the 360° window
+  // centered on the active region so strikes near ±180° plot on-screen.
   const strikePos = (lat: number, lon: number) => {
-    const p = worldPx(lat, lon, zoom);
+    const cLon = activeConfig.center.lon;
+    const wrappedLon = cLon + (((lon - cLon + 540) % 360) - 180);
+    const p = worldPx(lat, wrappedLon, zoom);
     return { x: p.x - centerPx.x, y: p.y - centerPx.y };
   };
+  const isBroadView = zoom <= 3;
 
   const userPoint = strikePos(userLat, userLon);
   const mpp = (156543.03 * Math.cos((userLat * Math.PI) / 180)) / n;
@@ -2571,6 +2659,7 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
               top: `calc(50% + ${t.y}px)`,
               width: TILE,
               height: TILE,
+              filter: 'invert(100%) hue-rotate(190deg) contrast(115%) brightness(78%) saturate(75%)',
             }}
           />
         ))}
@@ -2605,33 +2694,36 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
           </>
         )}
 
-        {/* User / Ratchaburi Pin */}
-        <div
-          className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-blue-600 border-2 border-white shadow-xl pointer-events-none z-20 flex items-center justify-center"
-          style={{
-            left: `calc(50% + ${userPoint.x}px)`,
-            top: `calc(50% + ${userPoint.y}px)`,
-          }}
-          title="Ratchaburi (Center)"
-        >
-          <div className="w-10 h-10 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
-          <span className="absolute left-6 whitespace-nowrap text-xs font-black px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-200 border border-blue-500/50 shadow">
-            Ratchaburi
-          </span>
-        </div>
+        {/* User / Ratchaburi Pin (local & Asia views only) */}
+        {(region === 'nearby' || region === 'asia') && (
+          <div
+            className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-blue-600 border-2 border-white shadow-xl pointer-events-none z-20 flex items-center justify-center"
+            style={{
+              left: `calc(50% + ${userPoint.x}px)`,
+              top: `calc(50% + ${userPoint.y}px)`,
+            }}
+            title="Ratchaburi (Center)"
+          >
+            <div className="w-10 h-10 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
+            <span className="absolute left-6 whitespace-nowrap text-xs font-black px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-200 border border-blue-500/50 shadow">
+              Ratchaburi
+            </span>
+          </div>
+        )}
         {(REGION_DOTS[region]||[]).map(d=>{const pt=strikePos(d.lat,d.lon);return <div key={d.name} className="absolute z-10 pointer-events-none px-1.5 py-0.5 rounded bg-slate-900/85 border border-slate-600 text-[10px] font-bold text-slate-200" style={{left:`calc(50% + ${pt.x}px)`,top:`calc(50% + ${pt.y}px)`,transform:'translate(-50%,-130%)'}}>{d.name}</div>})}
         {/* Live Strike Flashes over Map */}
         {/* Live Strike Flashes over Map */}
         {regionalStrikes.map((s, idx) => {
           const pt = strikePos(s.lat, s.lon);
           let bgCol = 'bg-purple-500 border-purple-200';
-          let size = 'w-3 h-3 -ml-1.5 -mt-1.5';
+          // Zoom-scaled dots: smaller on broad Americas/Global views
+          let size = isBroadView ? 'w-1.5 h-1.5 -ml-0.75 -mt-0.75' : 'w-3 h-3 -ml-1.5 -mt-1.5';
           if (s.ageSec < 60) {
             bgCol = 'bg-white border-yellow-300 ring-4 ring-yellow-400/60 animate-pulse';
-            size = 'w-4 h-4 -ml-2 -mt-2';
+            size = isBroadView ? 'w-2.5 h-2.5 -ml-1.25 -mt-1.25' : 'w-4 h-4 -ml-2 -mt-2';
           } else if (s.ageSec < 300) {
             bgCol = 'bg-amber-400 border-amber-100 ring-2 ring-amber-400/40';
-            size = 'w-3.5 h-3.5 -ml-1.75 -mt-1.75';
+            size = isBroadView ? 'w-2 h-2 -ml-1 -mt-1' : 'w-3.5 h-3.5 -ml-1.75 -mt-1.75';
           } else if (s.ageSec < 600) {
             bgCol = 'bg-orange-500 border-orange-200';
           }
