@@ -109,7 +109,6 @@ function AppContent() {
   const handleSelect = useCallback(
     (loc: GeoLocation) => {
       setLocation(loc);
-      setActiveView('forecast');
       loadWeather(loc);
       loadLocalVotes(loc);
       loadAccuracy(loc);
