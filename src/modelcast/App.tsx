@@ -206,11 +206,11 @@ function AppContent() {
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <SettingsBar />
             <button
-              onClick={() => setActiveView('logs')}
+            () => setActiveView(activeView === 'logs' ? 'forecast' : 'logs')
               className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${activeView === 'logs' ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
             >
               <ClipboardList size={16} />
-              <span className="">Logs</span>
+            setActiveView(activeView === 'logs' ? 'forecast' : 'logs')
             </button>
             <button
               onClick={() => void handleRefresh()}
