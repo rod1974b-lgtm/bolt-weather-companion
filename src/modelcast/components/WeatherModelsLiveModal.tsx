@@ -92,6 +92,40 @@ export function WeatherModelsLiveModal({
         </div>
 
         <div className="overflow-y-auto p-5 sm:p-6">
+          <div className="mb-5 flex flex-wrap gap-2">
+            {([
+              { id: 'forecast' as const, label: '7-Day Multi-Model Forecast' },
+              { id: 'ranking' as const, label: 'Accuracy & Rankings' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setTab(tab.id)}
+                className={`rounded-full px-4 py-1.5 text-xs font-bold transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-sky-500 text-white'
+                    : 'border border-slate-700 bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'forecast' && (
+            <section>
+              <h3 className="mb-3 text-lg font-bold text-white">7-day model comparison · {location.name}</h3>
+              {daily ? (
+                <DailyForecastComparison data={daily} />
+              ) : (
+                <p className="rounded-2xl border border-slate-700/60 bg-slate-800/40 p-6 text-center text-sm text-slate-400">
+                  Loading the forecast for {location.name}…
+                </p>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'ranking' && (
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <section>
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
