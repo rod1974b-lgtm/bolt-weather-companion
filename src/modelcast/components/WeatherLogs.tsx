@@ -144,6 +144,7 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
   const [photoCache, setPhotoCache] = useState<Record<string, string>>({});
   const [storageStats, setStorageStats] = useState({ count: 0, kb: 0 });
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [cityOnly, setCityOnly] = useState(true);
 
   const refreshStats = useCallback(async () => {
     const stats = await idbGetStats();
@@ -325,6 +326,13 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
     });
     return c;
   }, [logs]);
+
+  const cityLogs = useMemo(
+    () => logs.filter((l: any) => (l.location_name ?? '') === location.name),
+    [logs, location.name],
+  );
+  const visibleLogs = cityOnly ? cityLogs : logs;
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
