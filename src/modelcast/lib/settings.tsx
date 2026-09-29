@@ -20,7 +20,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(() => {
     try {
       const saved = localStorage.getItem(LANG_KEY);
-      if (saved === 'en' || saved === 'th' || saved === 'es' || saved === 'de') return saved;
+      if (saved && ['en', 'es', 'fr', 'de', 'ja', 'zh'].includes(saved)) return saved as Language;
     } catch {}
     return 'en';
   });
@@ -28,7 +28,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [units, setUnitsState] = useState<UnitSystem>(() => {
     try {
       const saved = localStorage.getItem(UNITS_KEY);
-      if (saved === 'metric' || saved === 'imperial') return saved;
+      if (saved === 'metric' || saved === 'us') return saved;
     } catch {}
     return 'metric';
   });
