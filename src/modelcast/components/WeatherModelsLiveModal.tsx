@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { BarChart3, FlaskConical, Search, Star, Trophy, X } from 'lucide-react';
-import type { GeoLocation, ModelAccuracy, VoteAggregate } from '@/modelcast/lib/types';
+import type { DailyForecast, GeoLocation, ModelAccuracy, VoteAggregate } from '@/modelcast/lib/types';
 import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
 import { VotingPanel } from '@/modelcast/components/VotingPanel';
+import { DailyForecastComparison } from '@/modelcast/components/DailyForecastComparison';
 
 interface WeatherModelsLiveModalProps {
   open: boolean;
@@ -12,6 +13,7 @@ interface WeatherModelsLiveModalProps {
   globalVotes: VoteAggregate[];
   accuracy: ModelAccuracy[];
   onVoted: () => void;
+  daily?: DailyForecast | null;
 }
 
 interface ModelScore {
