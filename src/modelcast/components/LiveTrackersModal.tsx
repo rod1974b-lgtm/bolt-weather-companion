@@ -1396,6 +1396,7 @@ function OsmMiniMap({
   onZoomChange,
   height = 340,
   showHomeAndRadius = true,
+  homeLabel = 'Home',
 }: {
   center: { lat: number; lon: number };
   home: { lat: number; lon: number };
@@ -1407,6 +1408,7 @@ function OsmMiniMap({
   onZoomChange: (newZoom: number) => void;
   height?: number;
   showHomeAndRadius?: boolean;
+  homeLabel?: string;
 }) {
   const c = worldPx(center.lat, center.lon, zoom);
   const n = 2 ** zoom;
@@ -1468,12 +1470,12 @@ function OsmMiniMap({
         />
       )}
 
-      {/* Home Location Marker (Ratchaburi, local view only) */}
+      {/* Home Location Marker (selected city, local view only) */}
       {showHomeAndRadius && (
         <div
           className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full bg-blue-600 border-2 border-white shadow-lg pointer-events-none z-10"
           style={at(h)}
-          title="Ratchaburi Location"
+          title={`${homeLabel} Location`}
         >
           <div className="w-8 h-8 -ml-2 -mt-2 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
         </div>
@@ -1839,6 +1841,7 @@ function EarthquakeTracker({ location }: { location: GeoLocation | null }) {
         zoom={zoom}
         onZoomChange={setZoom}
         showHomeAndRadius={quakeRegion === 'local'}
+        homeLabel={locName}
       />
 
       {/* Selected Quake Inspector Card */}
@@ -2406,7 +2409,7 @@ function decodeBlitzPayload(text: string): string {
   return g.join('');
 }
 
-function LightningTracker({ userLat, userLon }: { userLat: number; userLon: number }) {
+function LightningTracker({ userLat, userLon, locName = 'Here' }: { userLat: number; userLon: number; locName?: string }) {
   const [region, setRegion] = useState<LightningRegionId>('nearby');
   const [strikes, setStrikes] = useState<RawStrike[]>([]);
   const [connected, setConnected] = useState(false);
@@ -2592,7 +2595,7 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
                   All Clear — Zero Local Strikes
                 </span>
                 <span className="text-xs text-slate-400">
-                  Atmosphere is electrically stable within 50 km of Ratchaburi. Radar is actively monitoring.
+                  Atmosphere is electrically stable within 50 km of {locName}. Radar is actively monitoring.
                 </span>
               </div>
             </div>
@@ -2694,7 +2697,7 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
           </>
         )}
 
-        {/* User / Ratchaburi Pin (local & Asia views only) */}
+        {/* User Pin (local & Asia views only) */}
         {(region === 'nearby' || region === 'asia') && (
           <div
             className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-blue-600 border-2 border-white shadow-xl pointer-events-none z-20 flex items-center justify-center"
@@ -2702,12 +2705,14 @@ global: [{name:'Congo',lat:0,lon:22},{name:'Amazon',lat:-5,lon:-62},{name:'Java 
               left: `calc(50% + ${userPoint.x}px)`,
               top: `calc(50% + ${userPoint.y}px)`,
             }}
-            title="Ratchaburi (Center)"
+            title={`${locName} (Center)`}
           >
             <div className="w-10 h-10 rounded-full bg-blue-500/30 animate-ping pointer-events-none" />
             <span className="absolute left-6 whitespace-nowrap text-xs font-black px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-200 border border-blue-500/50 shadow">
-              Ratchaburi
+              {locName}
             </span>
+          </div>
+        )}
           </div>
         )}
         {(REGION_DOTS[region]||[]).map(d=>{const pt=strikePos(d.lat,d.lon);return <div key={d.name} className="absolute z-10 pointer-events-none px-1.5 py-0.5 rounded bg-slate-900/85 border border-slate-600 text-[10px] font-bold text-slate-200" style={{left:`calc(50% + ${pt.x}px)`,top:`calc(50% + ${pt.y}px)`,transform:'translate(-50%,-130%)'}}>{d.name}</div>})}
@@ -2958,12 +2963,13 @@ export function LiveTrackersModal({
                 <LightningTracker
                   userLat={location?.latitude ?? 13.54}
                   userLon={location?.longitude ?? 99.82}
+                  locName={location?.name ?? 'Ratchaburi'}
                 />
               )}
             </>
           )}
 
-          {mainTab === 'satellite' && <SatelliteTracker />}
+          {mainTab === 'satellite' && <SatelliteTracker location={location} />}
 
           {mainTab === 'emergency' && (
             <>
