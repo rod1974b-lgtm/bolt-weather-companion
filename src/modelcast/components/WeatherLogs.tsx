@@ -87,21 +87,22 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
       logged_at: new Date().toISOString(),
       sevNum: mainCond?.severity,
       group: mainCond?.group,
-       try {
+    };
+
+    try {
       const existing = JSON.parse(localStorage.getItem('weather_logs_safe') || '[]');
       existing.unshift(entry);
-      const saveLogs = (list) => localStorage.setItem('weather_logs_safe', JSON.stringify(list.slice(0, 200)));
+      const saveLogs = (list: any[]) => localStorage.setItem('weather_logs_safe', JSON.stringify(list.slice(0, 200)));
       try { saveLogs(existing); }
       catch (e) {
-        const trimmed = existing.map((l, i) => i < 10 ? l : (l.changes ? { ...l, changes: l.changes.map((c) => ({ ...c, photo: undefined })) } : l));
+        const trimmed = existing.map((l: any, i: number) => i < 10 ? l : (l.changes ? { ...l, changes: l.changes.map((c: any) => ({ ...c, photo: undefined })) } : l));
         try { saveLogs(trimmed); }
         catch (e2) {
-          const slim = trimmed.slice(0, 50).map((l, i) => i === 0 ? l : (l.changes ? { ...l, changes: l.changes.map((c) => ({ ...c, photo: undefined })) } : l));
+          const slim = trimmed.slice(0, 50).map((l: any, i: number) => i === 0 ? l : (l.changes ? { ...l, changes: l.changes.map((c: any) => ({ ...c, photo: undefined })) } : l));
           saveLogs(slim);
         }
         setMsg('⚠️ Storage was full — old photos removed, newest log saved');
       }
-      localStorage.setItem('weather_logs_safe', JSON.stringify(existing.slice(0,200)));
       try { await supabase.from('weather_logs').insert({ note: `[${selected}|${sev}|${changes.length} changes Sev${mainCond?.severity}/29] ${timeline} | ${note}`, location_name: location.name, logged_at: new Date().toISOString() } as any); } catch {}
       try {
         const acc = JSON.parse(localStorage.getItem('model_accuracy_auto_v1') || '{}');
