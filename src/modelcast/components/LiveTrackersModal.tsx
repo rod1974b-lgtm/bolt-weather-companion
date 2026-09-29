@@ -883,7 +883,11 @@ const SATS: { id: string; name: string; covers: boolean; mapUrl: string; sources
   },
 ];
 
-function SatelliteTracker() {
+function SatelliteTracker({ location }: { location?: GeoLocation | null }) {
+  const satLat = location?.latitude ?? 13.54;
+  const satLon = location?.longitude ?? 99.82;
+  const locName = location?.name ?? 'Ratchaburi';
+  const nearRatchaburi = Math.abs(satLat - 13.54) < 3 && Math.abs(satLon - 99.82) < 3;
   const [activeSat, setActiveSat] = useState(0); // default Himawari (index 0)
   const [pendingSat, setPendingSat] = useState<number | null>(null);
   const [band, setBand] = useState<SatBand>('trm'); // True Color vs IR
