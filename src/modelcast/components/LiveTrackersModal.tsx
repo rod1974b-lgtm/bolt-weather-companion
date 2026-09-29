@@ -1021,7 +1021,7 @@ function SatelliteTracker() {
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-amber-200">
             <Info size={16} className="text-amber-300 shrink-0" />
-            <span><strong>{SATS[pendingSat]!.name}</strong> is out of coverage for Ratchaburi, Thailand.</span>
+            <span><strong>{SATS[pendingSat]!.name}</strong> is out of coverage for {locName}.</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1098,18 +1098,18 @@ function SatelliteTracker() {
 
           {/* Zoom and Pin Controls */}
           <div className="flex items-center gap-1.5 ml-auto">
-            {region === 'se1' && activeSat === 0 && (
+            {region === 'se1' && activeSat === 0 && nearRatchaburi && (
               <button
                 type="button"
                 onClick={() => setShowReticle((v) => !v)}
-                title="Toggle Ratchaburi Crosshair Marker"
+                title={`Toggle ${locName} Crosshair Marker`}
                 className={`px-2 py-1 rounded-lg text-xs font-bold border transition ${
                   showReticle
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
                     : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white'
                 }`}
               >
-                📍 Ratchaburi
+                📍 {locName}
               </button>
             )}
             <div className="flex items-center gap-1 bg-slate-900/90 px-1.5 py-1 rounded-xl border border-slate-700/80 text-xs text-slate-300">
@@ -1226,8 +1226,8 @@ function SatelliteTracker() {
               }}
             />
 
-            {/* Target Reticle for Ratchaburi (SE Asia Frame) */}
-            {isDirectHimawari && region === 'se1' && showReticle && imageLoaded && (
+            {/* Target Reticle for selected city (SE Asia Frame) */}
+            {isDirectHimawari && region === 'se1' && showReticle && imageLoaded && nearRatchaburi && (
               <div
                 className="absolute pointer-events-none z-10 flex flex-col items-center"
                 style={{ top: '46.5%', left: '52.3%', transform: 'translate(-50%, -50%)' }}
@@ -1239,7 +1239,7 @@ function SatelliteTracker() {
                   </div>
                 </div>
                 <div className="mt-1 px-2 py-0.5 rounded-md bg-slate-900/90 border border-rose-500/60 text-[10px] font-black text-rose-300 whitespace-nowrap shadow-md">
-                  Ratchaburi (13.5°N, 99.8°E)
+                  {locName} ({satLat.toFixed(1)}°N, {satLon.toFixed(1)}°E)
                 </div>
               </div>
             )}
