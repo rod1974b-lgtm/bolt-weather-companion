@@ -759,7 +759,7 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
           );
         })}
 
-        {logs.length === 0 && <div style={{ color: '#475569', fontSize: '12px', marginTop: '12px', textAlign: 'center', padding: '20px' }}>No logs yet - add your first multi-observation log above</div>}
+        {visibleLogs.length === 0 && <div style={{ color: '#475569', fontSize: '12px', marginTop: '12px', textAlign: 'center', padding: '20px' }}>{cityOnly && logs.length > 0 ? `No logs for ${location.name} yet — switch to "All Cities" to see your other entries` : 'No logs yet - add your first multi-observation log above'}</div>}
       </div>
     </div>
   );
