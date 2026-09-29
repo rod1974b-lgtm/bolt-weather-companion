@@ -642,7 +642,7 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
       {/* Saved Logs Feed */}
       <div style={{ padding: '16px', background: '#1e293b', borderRadius: '16px', border: '1px solid #334155' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ color: 'white', fontWeight: 'bold' }}>Logs History ({logs.length})</h3>
+          <h3 style={{ color: 'white', fontWeight: 'bold' }}>Logs History ({visibleLogs.length})</h3>
           <button
             onClick={handleDeleteAll}
             disabled={logs.length === 0}
@@ -661,7 +661,32 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
           </button>
         </div>
 
-        {logs.map((log: any) => {
+        {/* City filter pills */}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+          {[
+            { id: true, label: `📍 ${location.name} (${cityLogs.length})` },
+            { id: false, label: `🌐 All Cities (${logs.length})` },
+          ].map((p) => (
+            <button
+              key={String(p.id)}
+              onClick={() => setCityOnly(p.id)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '999px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                color: cityOnly === p.id ? 'white' : '#94a3b8',
+                background: cityOnly === p.id ? '#0284c7' : '#0f172a',
+                border: '1px solid ' + (cityOnly === p.id ? '#38bdf8' : '#334155'),
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {visibleLogs.map((log: any) => {
           const col = SEVERITY.find((s) => s.id === log.severity)?.color || '#475569';
           const mainPhotoSrc = (log.mainPhotoId && photoCache[log.mainPhotoId]) || log.mainPhoto;
 
