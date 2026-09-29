@@ -36,8 +36,10 @@ export function WeatherModelsLiveModal({
   globalVotes,
   accuracy,
   onVoted,
+  daily,
 }: WeatherModelsLiveModalProps) {
   const [search, setSearch] = useState('');
+  const [activeTab, setTab] = useState<'forecast' | 'ranking'>('forecast');
 
   const scoredModels = useMemo<ModelScore[]>(() => {
     return WEATHER_MODELS.map((model) => {
@@ -168,6 +170,7 @@ export function WeatherModelsLiveModal({
               <VotingPanel location={location} votes={localVotes} onVoted={onVoted} />
             </aside>
           </div>
+          )}
         </div>
       </div>
     </div>
