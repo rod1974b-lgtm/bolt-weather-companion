@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Language, TFunc } from './translations';
 import { translate } from './translations';
 import type { UnitSystem } from './units';
@@ -13,9 +13,35 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
+const LANG_KEY = 'modelcast:language';
+const UNITS_KEY = 'modelcast:units';
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguage] = useState<Language>('en');
-  const [units, setUnits] = useState<UnitSystem>('metric');
+  const [language, setLanguageState] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem(LANG_KEY);
+      if (saved === 'en' || saved === 'th' || saved === 'es' || saved === 'de') return saved;
+    } catch {}
+    return 'en';
+  });
+
+  const [units, setUnitsState] = useState<UnitSystem>(() => {
+    try {
+      const saved = localStorage.getItem(UNITS_KEY);
+      if (saved === 'metric' || saved === 'imperial') return saved;
+    } catch {}
+    return 'metric';
+  });
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    try { localStorage.setItem(LANG_KEY, lang); } catch {}
+  };
+
+  const setUnits = (u: UnitSystem) => {
+    setUnitsState(u);
+    try { localStorage.setItem(UNITS_KEY, u); } catch {}
+  };
 
   const t = (key: string, params?: Record<string, string | number>) =>
     translate(language, key, params);
