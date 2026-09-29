@@ -9,6 +9,7 @@ import { LiveTrackersModal } from '@/modelcast/components/LiveTrackersModal';
 import { WeatherLogs } from '@/modelcast/components/WeatherLogs';
 import { SettingsBar } from '@/modelcast/components/SettingsBar';
 import { SettingsProvider, useSettings } from '@/modelcast/lib/settings';
+import { DayNightSummary } from '@/modelcast/components/DayNightSummary';
 import type {
   CurrentWeather,
   DailyForecast,
@@ -284,31 +285,41 @@ function AppContent() {
             <p className="mt-1 text-sm text-slate-500">{t('tryAnother')}</p>
           </div>
         )}
+{location && !loading && !error && current && hourly && daily && activeView === 'forecast' && (
+  <div className="space-y-6">
+    <CurrentWeatherCard
+      weather={current}
+      locationName={location.name}
+      country={location.country}
+    />
+    {lastUpdated && (
+      <p className="-mt-4 text-right text-xs text-slate-400">
+        Last updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })} ICT
+      </p>
+    )}
 
-        {location && !loading && !error && current && hourly && daily && activeView === 'forecast' && (
-          <div className="space-y-6">
-            <CurrentWeatherCard
-              weather={current}
-              locationName={location.name}
-              country={location.country}
-            />
-            {lastUpdated && (
-              <p className="-mt-4 text-right text-xs text-slate-400">
-                Last updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })} ICT
-              </p>
-            )}
-            <TopModelForecast
-              location={location}
-              model={topModel}
-              current={current}
-              hourly={hourly}
-              daily={daily}
-              votes={localVotes}
-              accuracy={accuracyResults}
-              onOpenModels={() => setShowModels(true)}
-            />
-          </div>
-        )}
+    {/* Day & Night Weather Report Summary (Sun, Moon, Narrative, Pressure, UV) */}
+    <DayNightSummary
+      location={location}
+      current={current}
+      hourly={hourly}
+      daily={daily}
+    />
+
+    <TopModelForecast
+      location={location}
+      model={topModel}
+      current={current}
+      hourly={hourly}
+      daily={daily}
+      votes={localVotes}
+      accuracy={accuracyResults}
+      onOpenModels={() => setShowModels(true)}
+    />
+  </div>
+)}
+
+       
 
         {location && !loading && !error && current && hourly && daily && activeView === 'logs' && (
           <WeatherLogs
