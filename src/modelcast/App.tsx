@@ -1,6 +1,16 @@
 // @ts-nocheck -- imported Bolt code, written for a looser TS config
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CloudSun, Loader2, AlertTriangle, Globe2, Radar, Layers, ClipboardList, RefreshCw } from 'lucide-react';
+import {
+  CloudSun,
+  Loader2,
+  AlertTriangle,
+  Globe2,
+  Radar,
+  Layers,
+  ClipboardList,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
 import { SearchBar } from '@/modelcast/components/SearchBar';
 import { CurrentWeatherCard } from '@/modelcast/components/CurrentWeatherCard';
 import { TopModelForecast } from '@/modelcast/components/TopModelForecast';
@@ -31,6 +41,7 @@ import { useFavorites } from '@/modelcast/lib/useFavorites';
 import { FavoritePlaces } from '@/modelcast/components/FavoritePlaces';
 
 const LAST_LOCATION_KEY = 'modelcast:last-location';
+const SELECTED_MODEL_KEY = 'modelcast:selected-model';
 
 function AppContent() {
   const { t } = useSettings();
@@ -49,8 +60,26 @@ function AppContent() {
   const [refreshing, setRefreshing] = useState(false);
   const { favorites, addFavorite, removeFavorite, isFavorite } = useFavorites();
   const [restored, setRestored] = useState(false);
-
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Model selection: 'auto' or specific model ID
+  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(SELECTED_MODEL_KEY) || 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+
+  const handleModelChange = useCallback((modelId: string) => {
+    setSelectedModelId(modelId);
+    try {
+      localStorage.setItem(SELECTED_MODEL_KEY, modelId);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const loadWeather = useCallback(async (loc: GeoLocation, force = false) => {
     if (!force) setLoading(true);
     setError(null);
@@ -132,7 +161,16 @@ function AppContent() {
         const last = JSON.parse(raw) as GeoLocation;
         handleSelect(last);
       } else {
-        handleSelect({ id: 1150965, name: 'Ratchaburi', latitude: 13.54, longitude: 99.82, country: 'Thailand', admin1: 'Ratchaburi', timezone: 'Asia/Bangkok', country_code: 'TH' } as GeoLocation);
+        handleSelect({
+          id: 1150965,
+          name: 'Ratchaburi',
+          latitude: 13.54,
+          longitude: 99.82,
+          country: 'Thailand',
+          admin1: 'Ratchaburi',
+          timezone: 'Asia/Bangkok',
+          country_code: 'TH',
+        } as GeoLocation);
       }
     } catch {
       // ignore
@@ -140,6 +178,16 @@ function AppContent() {
       setRestored(true);
     }
   }, [handleSelect]);
+
+  // Auto-refresh live weather every 10 minutes while open
+  useEffect(() => {
+    if (!location) return;
+    const id = setInterval(() => {
+      loadWeather(location, true);
+      loadAccuracy(location);
+    }, 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [location, loadWeather, loadAccuracy]);
 
   const handleRefresh = useCallback(async () => {
     if (!location) return;
@@ -191,6 +239,12 @@ function AppContent() {
     return WEATHER_MODELS[0];
   }, [localVotes, globalVotes, accuracyResults]);
 
+  // Active weather model (either user selected or automatically top-ranked)
+  const activeModel: WeatherModel = useMemo(() => {
+    if (selectedModelId === 'auto') return topModel;
+    return WEATHER_MODELS.find((m) => m.id === selectedModelId) ?? topModel;
+  }, [selectedModelId, topModel]);
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-lg">
@@ -202,11 +256,33 @@ function AppContent() {
               <p className="text-xs text-slate-400">{t('appTagline')}</p>
             </div>
           </div>
+
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {/* Quick Model Selector in Header */}
+            <div className="flex items-center">
+              <select
+                value={selectedModelId}
+                onChange={(e) => handleModelChange(e.target.value)}
+                aria-label="Change Weather Model"
+                className="h-8 max-w-[180px] truncate rounded-lg border border-slate-700 bg-slate-800/90 px-2 text-xs font-semibold text-sky-300 outline-none transition-colors hover:border-sky-500/70 focus:border-sky-400"
+              >
+                <option value="auto">⭐ Auto ({topModel.name})</option>
+                <optgroup label="Select Weather Model">
+                  {WEATHER_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.organization}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
             <SettingsBar />
             <button
               onClick={() => setActiveView(activeView === 'logs' ? 'forecast' : 'logs')}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${activeView === 'logs' ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeView === 'logs' ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
             >
               <ClipboardList size={16} />
               <span>{activeView === 'logs' ? 'Forecast' : 'Logs'}</span>
@@ -217,21 +293,21 @@ function AppContent() {
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-              <span className="">Refresh</span>
+              <span>Refresh</span>
             </button>
             <button
               onClick={() => setShowTrackers(true)}
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-red-500/90 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-400"
             >
               <Radar size={16} />
-              <span className="">{t('liveTrackers')}</span>
+              <span>{t('liveTrackers')}</span>
             </button>
             <button
               onClick={() => setShowModels(true)}
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-400"
             >
               <Layers size={16} />
-              <span className="">{t('weatherModelsLive')}</span>
+              <span>{t('weatherModelsLive')}</span>
             </button>
           </div>
         </div>
@@ -284,41 +360,103 @@ function AppContent() {
             <p className="mt-1 text-sm text-slate-500">{t('tryAnother')}</p>
           </div>
         )}
-{location && !loading && !error && current && hourly && daily && activeView === 'forecast' && (
-  <div className="space-y-6">
-    <CurrentWeatherCard
-      weather={current}
-      locationName={location.name}
-      country={location.country}
-    />
-    {lastUpdated && (
-      <p className="-mt-4 text-right text-xs text-slate-400">
-        Last updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })} ICT
-      </p>
-    )}
 
-    {/* Day & Night Weather Report Summary (Sun, Moon, Narrative, Pressure, UV) */}
-    <DayNightSummary
-      location={location}
-      current={current}
-      hourly={hourly}
-      daily={daily}
-    />
+        {location && !loading && !error && current && hourly && daily && activeView === 'forecast' && (
+          <div className="space-y-6">
+            <CurrentWeatherCard
+              weather={current}
+              locationName={location.name}
+              country={location.country}
+            />
+            {lastUpdated && (
+              <p className="-mt-4 text-right text-xs text-slate-400">
+                Last updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' })} ICT
+              </p>
+            )}
 
-    <TopModelForecast
-      location={location}
-      model={topModel}
-      current={current}
-      hourly={hourly}
-      daily={daily}
-      votes={localVotes}
-      accuracy={accuracyResults}
-      onOpenModels={() => setShowModels(true)}
-    />
-  </div>
-)}
+            {/* Weather Model Selector Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700/60 bg-gradient-to-r from-slate-800/90 via-slate-800/60 to-slate-800/90 p-3.5 shadow-lg backdrop-blur-sm">
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-white shadow-inner"
+                  style={{ backgroundColor: `${activeModel.color}25`, border: `1px solid ${activeModel.color}50` }}
+                >
+                  <span style={{ color: activeModel.color }} className="text-xs font-extrabold uppercase tracking-tight">
+                    {activeModel.name.slice(0, 3)}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Weather Model
+                    </span>
+                    {selectedModelId === 'auto' ? (
+                      <span className="rounded-full border border-amber-400/30 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                        ★ #1 Auto Ranked
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-sky-400/30 bg-sky-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                        Manual Override
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-white">
+                    {activeModel.name} <span className="text-xs font-normal text-slate-400">({activeModel.organization})</span>
+                  </p>
+                </div>
+              </div>
 
-       
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedModelId}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="cursor-pointer rounded-xl border border-sky-500/50 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm outline-none transition hover:border-sky-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20"
+                >
+                  <option value="auto">⭐ Auto (Top Ranked: {topModel.name})</option>
+                  <optgroup label="Select Specific Weather Model">
+                    {WEATHER_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} — {m.organization} ({m.region})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                {selectedModelId !== 'auto' && (
+                  <button
+                    type="button"
+                    onClick={() => handleModelChange('auto')}
+                    className="flex items-center gap-1 rounded-xl bg-slate-700/70 px-2.5 py-1.5 text-xs font-semibold text-amber-300 transition hover:bg-slate-700 hover:text-amber-200"
+                    title="Reset to automatically ranked top model"
+                  >
+                    <Sparkles size={13} />
+                    <span>Reset Auto</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Day & Night Weather Report Summary */}
+            <DayNightSummary
+              location={location}
+              current={current}
+              hourly={hourly}
+              daily={daily}
+            />
+
+            {/* Forecast using the active selected model */}
+            <TopModelForecast
+              location={location}
+              model={activeModel}
+              current={current}
+              hourly={hourly}
+              daily={daily}
+              votes={localVotes}
+              accuracy={accuracyResults}
+              onOpenModels={() => setShowModels(true)}
+            />
+          </div>
+        )}
 
         {location && !loading && !error && current && hourly && daily && activeView === 'logs' && (
           <WeatherLogs
