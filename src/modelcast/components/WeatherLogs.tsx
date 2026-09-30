@@ -1,51 +1,154 @@
-// @ts-nocheck -- WeatherLogs with IndexedDB photo storage + Multi-Entry observations
+// @ts-nocheck -- WeatherLogs: Pure Timeline Observations with Ground-Truth Explanations & IndexedDB Photos
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/modelcast/lib/supabase';
 import type { GeoLocation, CurrentWeather } from '@/modelcast/lib/types';
 import ObservationImagePicker from '@/modelcast/components/ObservationImagePicker';
 
-type WeatherChange = { time: string; condition: string; severity: string; photo?: string; photoId?: string };
+export interface WeatherConditionGuide {
+  id: string;
+  label: string;
+  emoji: string;
+  severity: 'light' | 'moderate' | 'heavy' | 'extreme';
+  color: string;
+  cues: string;
+  rate: string;
+  impact: string;
+}
 
-const CONDITIONS = [
-  { id: 'sunny', label: 'Sunny (0-10%)', emoji: '☀️', severity: 1, group: 'Clear', level: 'light' },
-  { id: 'partly_cloudy', label: 'Partly Cloudy (25-50%)', emoji: '⛅', severity: 2, group: 'Clear', level: 'light' },
-  { id: 'mostly_cloudy', label: 'Mostly Cloudy (60-90%)', emoji: '🌥️', severity: 3, group: 'Clear', level: 'light' },
-  { id: 'overcast', label: 'Overcast (100%)', emoji: '☁️', severity: 4, group: 'Clear', level: 'light' },
-  { id: 'humid', label: 'Humid', emoji: '💧', severity: 5, group: 'Visibility', level: 'light' },
-  { id: 'drizzle', label: 'Drizzle (misty)', emoji: '🌦️', severity: 6, group: 'Light Rain', level: 'light' },
-  { id: 'light_rain', label: 'Light Rain', emoji: '🌧️', severity: 7, group: 'Light Rain', level: 'light' },
-  { id: 'foggy', label: 'Foggy / Mist', emoji: '🌁', severity: 8, group: 'Visibility', level: 'moderate' },
-  { id: 'hazy', label: 'Haze / PM2.5', emoji: '🌫️', severity: 9, group: 'Visibility', level: 'moderate' },
-  { id: 'windy', label: 'Windy', emoji: '💨', severity: 10, group: 'Temp/Wind', level: 'moderate' },
-  { id: 'cold', label: 'Cold', emoji: '🥶', severity: 11, group: 'Temp/Wind', level: 'moderate' },
-  { id: 'hot', label: 'Hot', emoji: '🔥', severity: 12, group: 'Temp/Wind', level: 'moderate' },
-  { id: 'rainy', label: 'Moderate Rain', emoji: '🌧️', severity: 13, group: 'Light Rain', level: 'moderate' },
-  { id: 'flurries', label: 'Flurries', emoji: '🌨️', severity: 14, group: 'Snow', level: 'moderate' },
-  { id: 'heavy_rain', label: 'Heavy Rain', emoji: '🌊', severity: 15, group: 'Heavy Precip', level: 'heavy' },
-  { id: 'snow', label: 'Snow (1-5cm)', emoji: '❄️', severity: 16, group: 'Snow', level: 'heavy' },
-  { id: 'sleet', label: 'Sleet', emoji: '🌨️', severity: 17, group: 'Heavy Precip', level: 'heavy' },
-  { id: 'freezing_rain', label: 'Freezing Rain', emoji: '🌧️❄️', severity: 18, group: 'Heavy Precip', level: 'heavy' },
-  { id: 'hail', label: 'Hail', emoji: '🧊', severity: 19, group: 'Heavy Precip', level: 'heavy' },
-  { id: 'icy', label: 'Icy Road', emoji: '🧊', severity: 20, group: 'Temp/Wind', level: 'heavy' },
-  { id: 'heavy_snow', label: 'Heavy Snow (5-15cm)', emoji: '❄️❄️', severity: 21, group: 'Snow', level: 'heavy' },
-  { id: 'blowing_snow', label: 'Blowing Snow', emoji: '💨❄️', severity: 22, group: 'Snow', level: 'heavy' },
-  { id: 'snow_squall', label: 'Snow Squall', emoji: '🌬️❄️', severity: 23, group: 'Snow', level: 'heavy' },
-  { id: 'blizzard', label: 'Blizzard', emoji: '❄️💨', severity: 24, group: 'Snow', level: 'extreme' },
-  { id: 'thunderstorm', label: 'Thunderstorm', emoji: '⛈️', severity: 25, group: 'Severe', level: 'extreme' },
-  { id: 'lightning', label: 'Lightning', emoji: '⚡', severity: 26, group: 'Severe', level: 'extreme' },
-  { id: 'sandstorm', label: 'Sandstorm', emoji: '🏜️', severity: 27, group: 'Severe', level: 'extreme' },
-  { id: 'tornado', label: 'Tornado', emoji: '🌪️', severity: 28, group: 'Extreme', level: 'extreme' },
-  { id: 'hurricane', label: 'Hurricane', emoji: '🌀', severity: 29, group: 'Extreme', level: 'extreme' },
+export const CONDITIONS: WeatherConditionGuide[] = [
+  {
+    id: 'sunny',
+    label: 'Sunny / Clear',
+    emoji: '☀️',
+    severity: 'light',
+    color: '#38bdf8',
+    cues: 'Sky completely clear or <10% high cirrus. Strong sharp shadows cast on ground; intense direct solar radiation.',
+    rate: '0 mm rain • Peak UV exposure',
+    impact: 'Comfortable to hot depending on season. Protect skin/eyes during midday peak solar hours.',
+  },
+  {
+    id: 'partly_cloudy',
+    label: 'Partly Cloudy',
+    emoji: '⛅',
+    severity: 'light',
+    color: '#60a5fa',
+    cues: 'Sun shines through broken fluffy cumulus covering 25–50% of the sky. Alternating warm sun and cool shadows.',
+    rate: '0 mm rain • Gentle thermal breeze',
+    impact: 'Ideal outdoor conditions; pleasant lighting with intermittent direct sun.',
+  },
+  {
+    id: 'overcast',
+    label: 'Overcast',
+    emoji: '☁️',
+    severity: 'light',
+    color: '#94a3b8',
+    cues: 'Sky 100% blanketed by a dull, uniform gray cloud layer. No distinct shadows, muted light, sun disc obscured.',
+    rate: '0 mm rain (or pre-rain humidity build-up)',
+    impact: 'Traps heat overnight or prevents daytime solar heating. Often precedes developing rain cells.',
+  },
+  {
+    id: 'drizzle',
+    label: 'Drizzle / Mist',
+    emoji: '🌦️',
+    severity: 'light',
+    color: '#06b6d4',
+    cues: 'Extremely fine micro-droplets floating in the air. Dampens pavement without distinct ripples or running water.',
+    rate: '< 1.0 mm/h • Surface dampening',
+    impact: 'Windshield wipers on intermittent delay. Walking without an umbrella is tolerable for several minutes.',
+  },
+  {
+    id: 'light_rain',
+    label: 'Light Rain',
+    emoji: '🌧️',
+    severity: 'light',
+    color: '#22c55e',
+    cues: 'Individual drops clearly visible and audible. Small circular ripples form in shallow puddles; pavement glistens.',
+    rate: '1.0 – 2.5 mm/h',
+    impact: 'Wipers on continuous low speed. Umbrella needed. No standing water on well-drained roadways.',
+  },
+  {
+    id: 'moderate_rain',
+    label: 'Moderate Rain',
+    emoji: '🌧️',
+    severity: 'moderate',
+    color: '#eab308',
+    cues: 'Steady, rhythmic drumming sound. Continuous water flowing along curbs and gutters; spray kicked up behind car tires.',
+    rate: '2.5 – 10.0 mm/h',
+    impact: 'Wipers on standard speed. Moderate visibility reduction. Walking quickly gets shoes and clothes soaked.',
+  },
+  {
+    id: 'heavy_rain',
+    label: 'Heavy Rain',
+    emoji: '🌊',
+    severity: 'heavy',
+    color: '#f97316',
+    cues: 'Loud roaring sound on roofs and cars. Sheets of water sweeping across streets; visibility drops below 1 km.',
+    rate: '10.0 – 25.0 mm/h (Gauges often lose 10-15% to splash-out)',
+    impact: 'Wipers on maximum high speed. Rapid water accumulation in road dips. Hydroplaning hazard; slow driving.',
+  },
+  {
+    id: 'extreme_rain',
+    label: 'Torrential Downpour',
+    emoji: '🚨',
+    severity: 'extreme',
+    color: '#ef4444',
+    cues: 'Blinding white curtain of water. Rain bouncing 15–20 cm off the pavement. Near-zero visibility; drains overflow.',
+    rate: '> 25.0 – 50+ mm/h (High Flash Flood Risk)',
+    impact: 'Flash ponding occurs in minutes. Pull over safely if driving. Standard tipping gauges severely undercount volume.',
+  },
+  {
+    id: 'thunderstorm',
+    label: 'Thunderstorm',
+    emoji: '⛈️',
+    severity: 'extreme',
+    color: '#a855f7',
+    cues: 'Towering dark anvil clouds, sudden gust front, temperature plunge, and audible thunder rumbles or lightning bolts.',
+    rate: 'Variable squalls 15–50+ mm/h • Lightning hazard',
+    impact: '30-30 Safety Rule: If time between flash and thunder is under 30 seconds, immediately take shelter indoors.',
+  },
+  {
+    id: 'windy',
+    label: 'Windy / Squall',
+    emoji: '💨',
+    severity: 'moderate',
+    color: '#14b8a6',
+    cues: 'Large tree branches whipping constantly; dust and loose leaves airborne; umbrellas blown inside out.',
+    rate: 'Sustained > 30 km/h or gusts > 45 km/h',
+    impact: 'Hazardous for two-wheelers/scooters. Watch for loose sheet-metal roofing and falling tree limbs.',
+  },
+  {
+    id: 'hazy',
+    label: 'Haze / PM2.5 Smoke',
+    emoji: '🌫️',
+    severity: 'moderate',
+    color: '#f59e0b',
+    cues: 'Milky, bleached horizon with brownish-yellow tint. Distant hills faded or invisible; acrid smell in the air.',
+    rate: 'Visibility 2 – 5 km • Elevated particulate matter',
+    impact: 'Sensitive individuals should wear N95/FFP2 masks outdoors and keep doors and windows closed.',
+  },
+  {
+    id: 'foggy',
+    label: 'Dense Fog',
+    emoji: '🌁',
+    severity: 'moderate',
+    color: '#64748b',
+    cues: 'Ground-level cloud engulfing surrounding area. Landmarks past 500m disappear; damp moisture covers skin.',
+    rate: 'Visibility < 1 km • 100% Relative Humidity',
+    impact: 'Drive slowly using low-beam fog lights. High beams reflect off droplets and cause blinding white-out glare.',
+  },
+  {
+    id: 'hot',
+    label: 'Oppressive Heat',
+    emoji: '🔥',
+    severity: 'moderate',
+    color: '#dc2626',
+    cues: 'Heat waves shimmering off road asphalt. Stifling, stagnant air; heavy perspiration that struggles to evaporate.',
+    rate: 'Temp > 35°C or Heat Index > 41°C',
+    impact: 'High danger of heat exhaustion and cramps. Drink extra electrolytes and avoid strenuous activity in the sun.',
+  },
 ];
 
-const SEVERITY = [
-  { id: 'light', label: 'Light', color: '#22c55e', range: '1-7', desc: 'Mild' },
-  { id: 'moderate', label: 'Moderate', color: '#eab308', range: '8-14', desc: 'Noticeable' },
-  { id: 'heavy', label: 'Heavy', color: '#f97316', range: '15-23', desc: 'Strong' },
-  { id: 'extreme', label: 'Extreme', color: '#ef4444', range: '24-29', desc: 'Dangerous' },
-];
-
-// --- IndexedDB Native Photo Engine ---
+// --- IndexedDB Storage Engine for Photo Binaries ---
 const IDB_NAME = 'modelcast_photos_v1';
 const STORE_NAME = 'photos';
 
@@ -131,211 +234,193 @@ async function idbGetStats(): Promise<{ count: number; kb: number }> {
   }
 }
 
-export function WeatherLogs({ location, current }: { location: GeoLocation; current: CurrentWeather }) {
-  const [selected, setSelected] = useState('partly_cloudy');
-  const [sev, setSev] = useState('moderate');
-  const [note, setNote] = useState('');
-  const [mainPhoto, setMainPhoto] = useState<string | undefined>(undefined);
+export function WeatherLogs({
+  location,
+  current,
+}: {
+  location: GeoLocation;
+  current: CurrentWeather;
+}) {
+  const [obsTime, setObsTime] = useState<string>(() =>
+    new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  );
+  const [selectedCondId, setSelectedCondId] = useState<string>('partly_cloudy');
+  const [temperature, setTemperature] = useState<number>(() => current?.temperature ?? 30);
+  const [note, setNote] = useState<string>('');
+  const [photo, setPhoto] = useState<string | undefined>(undefined);
   const [logs, setLogs] = useState<any[]>([]);
-  const [msg, setMsg] = useState('');
-  const [changes, setChanges] = useState<WeatherChange[]>([
-    { time: new Date().toTimeString().slice(0, 5), condition: 'partly_cloudy', severity: 'moderate' },
-  ]);
+  const [msg, setMsg] = useState<string>('');
   const [photoCache, setPhotoCache] = useState<Record<string, string>>({});
   const [storageStats, setStorageStats] = useState({ count: 0, kb: 0 });
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
-  const [cityOnly, setCityOnly] = useState(true);
+  const [cityOnly, setCityOnly] = useState<boolean>(true);
+
+  const activeCondition = useMemo(
+    () => CONDITIONS.find((c) => c.id === selectedCondId) || CONDITIONS[1],
+    [selectedCondId]
+  );
 
   const refreshStats = useCallback(async () => {
     const stats = await idbGetStats();
     setStorageStats(stats);
   }, []);
 
-  // Load logs and photos from IndexedDB
-  useEffect(() => {
+  // Load saved observations from localStorage
+  const loadLogs = useCallback(() => {
     try {
-      const local = JSON.parse(localStorage.getItem('weather_logs_safe') || '[]');
-      setLogs(local.slice(0, 100));
+      const stored = localStorage.getItem('weather_logs_safe');
+      const parsed = stored ? JSON.parse(stored) : [];
+      setLogs(parsed);
 
-      // Prefetch photos from IndexedDB for displayed logs
-      const photoIdsToFetch: string[] = [];
-      local.forEach((l: any) => {
-        if (l.mainPhotoId) photoIdsToFetch.push(l.mainPhotoId);
-        if (l.changes) {
-          l.changes.forEach((c: any) => {
-            if (c.photoId) photoIdsToFetch.push(c.photoId);
+      // Preload images into memory cache
+      parsed.forEach(async (log: any) => {
+        const pId = log.photoId || log.mainPhotoId;
+        if (pId && !photoCache[pId]) {
+          const dataUrl = await idbGetPhoto(pId);
+          if (dataUrl) setPhotoCache((prev) => ({ ...prev, [pId]: dataUrl }));
+        }
+        if (log.changes) {
+          log.changes.forEach(async (ch: any) => {
+            if (ch.photoId && !photoCache[ch.photoId]) {
+              const dataUrl = await idbGetPhoto(ch.photoId);
+              if (dataUrl) setPhotoCache((prev) => ({ ...prev, [ch.photoId]: dataUrl }));
+            }
           });
         }
       });
-
-      if (photoIdsToFetch.length > 0) {
-        Promise.all(
-          photoIdsToFetch.map(async (id) => {
-            const dataUrl = await idbGetPhoto(id);
-            return { id, dataUrl };
-          })
-        ).then((results) => {
-          const cache: Record<string, string> = {};
-          results.forEach((r) => {
-            if (r.dataUrl) cache[r.id] = r.dataUrl;
-          });
-          setPhotoCache((prev) => ({ ...prev, ...cache }));
-        });
-      }
-    } catch {}
-    refreshStats();
-  }, [refreshStats]);
+    } catch {
+      setLogs([]);
+    }
+  }, [photoCache]);
 
   useEffect(() => {
-    const cond = CONDITIONS.find((c) => c.id === selected);
-    if (cond) setSev(cond.level);
-  }, [selected]);
+    loadLogs();
+    refreshStats();
+  }, []);
 
-  const handleAdd = async () => {
-    setMsg('Saving log & optimizing photo storage...');
-    const mainCond = CONDITIONS.find((c) => c.id === selected);
+  // Quick fill from live station
+  const handleQuickFill = () => {
+    if (current) {
+      setTemperature(Math.round(current.temperature));
+      const code = current.weather_code;
+      if (code === 0 || code === 1) setSelectedCondId('sunny');
+      else if (code === 2) setSelectedCondId('partly_cloudy');
+      else if (code === 3) setSelectedCondId('overcast');
+      else if (code >= 51 && code <= 55) setSelectedCondId('drizzle');
+      else if (code === 61 || code === 80) setSelectedCondId('light_rain');
+      else if (code === 63 || code === 81) setSelectedCondId('moderate_rain');
+      else if (code === 65 || code === 82) setSelectedCondId('heavy_rain');
+      else if (code >= 95) setSelectedCondId('thunderstorm');
+      else if (code === 45 || code === 48) setSelectedCondId('foggy');
+    }
+    setObsTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }));
+    setMsg('⚡ Filled with live station observations');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  // Submit new Timeline Observation
+  const handleSaveObservation = async () => {
     const nowStamp = Date.now();
-    const newCacheEntries: Record<string, string> = {};
+    let photoId: string | undefined = undefined;
 
-    // 1. Offload main photo to IndexedDB
-    let mainPhotoId: string | undefined = undefined;
-    if (mainPhoto) {
-      mainPhotoId = `p_main_${nowStamp}`;
-      await idbSavePhoto(mainPhotoId, mainPhoto);
-      newCacheEntries[mainPhotoId] = mainPhoto;
+    if (photo) {
+      photoId = `photo_${nowStamp}`;
+      await idbSavePhoto(photoId, photo);
+      setPhotoCache((prev) => ({ ...prev, [photoId!]: photo }));
     }
 
-    // 2. Offload timeline change photos to IndexedDB
-    const processedChanges = await Promise.all(
-      changes.map(async (c, idx) => {
-        if (c.photo) {
-          const chPhotoId = `p_ch_${nowStamp}_${idx}`;
-          await idbSavePhoto(chPhotoId, c.photo);
-          newCacheEntries[chPhotoId] = c.photo;
-          return { ...c, photoId: chPhotoId, photo: undefined }; // keep localStorage lightweight
-        }
-        return c;
-      })
-    );
-
-    setPhotoCache((prev) => ({ ...prev, ...newCacheEntries }));
-
-    const timeline = processedChanges
-      .map((c) => {
-        const cond = CONDITIONS.find((x) => x.id === c.condition);
-        return `${c.time} ${cond?.emoji} ${cond?.label}[${c.severity}]`;
-      })
-      .join(' → ');
-
-    const entry = {
-      id: 'local_' + nowStamp,
-      condition: selected,
-      severity: sev,
-      note,
-      mainPhotoId,
-      timeline,
-      changes: processedChanges,
-      changeCount: processedChanges.length,
+    const newObservation = {
+      id: `obs_${nowStamp}`,
+      time: obsTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      condition: activeCondition.id,
+      conditionLabel: activeCondition.label,
+      emoji: activeCondition.emoji,
+      severity: activeCondition.severity,
+      severityColor: activeCondition.color,
+      temperature: Number(temperature),
+      rate: activeCondition.rate,
+      note: note.trim(),
+      photoId,
       location_name: location.name,
-      temperature: current.temperature,
       logged_at: new Date().toISOString(),
-      sevNum: mainCond?.severity,
-      group: mainCond?.group,
     };
 
     try {
       const existing = JSON.parse(localStorage.getItem('weather_logs_safe') || '[]');
-      existing.unshift(entry);
-      localStorage.setItem('weather_logs_safe', JSON.stringify(existing.slice(0, 150)));
+      existing.unshift(newObservation);
+      localStorage.setItem('weather_logs_safe', JSON.stringify(existing.slice(0, 200)));
 
+      // Optional Supabase backup
       try {
         await supabase.from('weather_logs').insert({
-          note: `[${selected}|${sev}|${changes.length} changes Sev${mainCond?.severity}/29] ${timeline} | ${note}`,
+          note: `[${newObservation.time}] ${activeCondition.emoji} ${activeCondition.label} (${newObservation.temperature}°C) | ${note}`,
           location_name: location.name,
-          logged_at: new Date().toISOString(),
+          logged_at: newObservation.logged_at,
         } as any);
       } catch {}
 
-      try {
-        const acc = JSON.parse(localStorage.getItem('model_accuracy_auto_v1') || '{}');
-        changes.forEach((ch) => {
-          const c = CONDITIONS.find((x) => x.id === ch.condition);
-          ['ecmwf', 'gfs', 'icon', 'ukmo', 'gem'].forEach((k) => {
-            if (!acc[k]) acc[k] = { score: 0, count: 0 };
-            acc[k].score += (c?.severity || 5) / 10;
-            acc[k].count += 1;
-          });
-        });
-        localStorage.setItem('model_accuracy_auto_v1', JSON.stringify(acc));
-      } catch {}
-    } catch (e) {
-      console.error(e);
-    }
+      // Reset form
+      setNote('');
+      setPhoto(undefined);
+      setObsTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }));
+      loadLogs();
+      await refreshStats();
 
-    setLogs((prev) => [entry, ...prev].slice(0, 100));
-    setMsg('✅ Saved ' + changes.length + ' observations • Photos safely stored in IndexedDB');
-    setNote('');
-    setMainPhoto(undefined);
-    setChanges([{ time: new Date().toTimeString().slice(0, 5), condition: 'partly_cloudy', severity: 'moderate' }]);
-    refreshStats();
+      setMsg(`✅ Observation logged for ${location.name} at ${newObservation.time}`);
+      setTimeout(() => setMsg(''), 4000);
+    } catch {
+      setMsg('❌ Failed to save observation');
+    }
   };
 
   const handleDeleteOne = async (id: string) => {
-    if (!confirm('Delete this log?')) return;
     try {
       const existing = JSON.parse(localStorage.getItem('weather_logs_safe') || '[]');
       const target = existing.find((l: any) => l.id === id);
+      const remaining = existing.filter((l: any) => l.id !== id);
+      localStorage.setItem('weather_logs_safe', JSON.stringify(remaining));
 
-      // Clean up associated photos from IndexedDB
-      if (target) {
-        const photosToDelete: string[] = [];
-        if (target.mainPhotoId) photosToDelete.push(target.mainPhotoId);
-        if (target.changes) {
-          target.changes.forEach((c: any) => {
-            if (c.photoId) photosToDelete.push(c.photoId);
-          });
-        }
-        await idbDeletePhotos(photosToDelete);
+      const photosToDelete: string[] = [];
+      if (target?.photoId) photosToDelete.push(target.photoId);
+      if (target?.mainPhotoId) photosToDelete.push(target.mainPhotoId);
+      if (target?.changes) {
+        target.changes.forEach((c: any) => {
+          if (c.photoId) photosToDelete.push(c.photoId);
+        });
       }
 
-      const filtered = existing.filter((l: any) => l.id !== id);
-      localStorage.setItem('weather_logs_safe', JSON.stringify(filtered));
-      setLogs(filtered.slice(0, 100));
-      setMsg('🗑️ Deleted entry and removed photos from storage');
-      refreshStats();
+      if (photosToDelete.length) {
+        await idbDeletePhotos(photosToDelete);
+        setPhotoCache((prev) => {
+          const next = { ...prev };
+          photosToDelete.forEach((p) => delete next[p]);
+          return next;
+        });
+      }
+
+      loadLogs();
+      await refreshStats();
     } catch {}
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm('Delete ALL ' + logs.length + ' logs? This cannot be undone!')) return;
-    try {
-      localStorage.setItem('weather_logs_safe', JSON.stringify([]));
-      await idbClearPhotos();
-      setLogs([]);
-      setPhotoCache({});
-      setMsg('🗑️ Cleared all entries and IndexedDB photo cache');
-      refreshStats();
-    } catch {}
+    if (!window.confirm('Delete all timeline weather observations and photos?')) return;
+    localStorage.removeItem('weather_logs_safe');
+    await idbClearPhotos();
+    setPhotoCache({});
+    setLogs([]);
+    await refreshStats();
   };
 
-  const bySev = useMemo(() => {
-    const c: any = { light: 0, moderate: 0, heavy: 0, extreme: 0 };
-    logs.forEach((l: any) => {
-      if (l.severity) c[l.severity] = (c[l.severity] || 0) + 1;
-      if (l.changes) l.changes.forEach((ch: any) => (c[ch.severity] = (c[ch.severity] || 0) + 1));
-    });
-    return c;
-  }, [logs]);
-
+  // Filter logs by selected city
   const cityLogs = useMemo(
-    () => logs.filter((l: any) => (l.location_name ?? '') === location.name),
-    [logs, location.name],
+    () => logs.filter((l) => l.location_name === location.name),
+    [logs, location.name]
   );
   const visibleLogs = cityOnly ? cityLogs : logs;
 
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto', color: '#e2e8f0', fontFamily: 'sans-serif' }}>
       {/* Lightbox Modal */}
       {lightboxImg && (
         <div
@@ -344,422 +429,498 @@ export function WeatherLogs({ location, current }: { location: GeoLocation; curr
             position: 'fixed',
             inset: 0,
             background: 'rgba(0,0,0,0.85)',
-            zIndex: 99999,
+            zIndex: 9999,
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '20px',
+            cursor: 'zoom-out',
           }}
         >
-          <img
-            src={lightboxImg}
-            alt="Full Observation"
-            style={{ maxWidth: '90vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: '12px', border: '2px solid #38bdf8' }}
-          />
-          <button
-            onClick={() => setLightboxImg(null)}
+          <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }}>
+            <img
+              src={lightboxImg}
+              alt="Enlarged observation"
+              style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: '12px', border: '2px solid #38bdf8' }}
+            />
+            <button
+              onClick={() => setLightboxImg(null)}
+              style={{
+                position: 'absolute',
+                top: '-15px',
+                right: '-15px',
+                background: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Header Bar */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '10px',
+          padding: '16px',
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          borderRadius: '16px',
+          border: '1px solid #334155',
+          marginBottom: '16px',
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#f8fafc' }}>
+            ⏱️ Timeline Weather Observations
+          </h2>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+            Logging for <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{location.name}</span> • One unified stream of ground truth
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span
             style={{
-              marginTop: '14px',
-              padding: '8px 20px',
+              fontSize: '11px',
+              padding: '4px 10px',
+              borderRadius: '20px',
+              background: '#0284c720',
+              border: '1px solid #0284c750',
+              color: '#38bdf8',
+            }}
+          >
+            💾 {storageStats.count} photos ({storageStats.kb} KB)
+          </span>
+          <button
+            onClick={handleQuickFill}
+            style={{
+              fontSize: '11px',
+              padding: '6px 12px',
               background: '#0284c7',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
-              fontWeight: 'bold',
               cursor: 'pointer',
+              fontWeight: 'bold',
             }}
           >
-            ✕ Close View
+            ⚡ Live Station Fill
           </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div
+          style={{
+            padding: '10px 14px',
+            marginBottom: '14px',
+            borderRadius: '10px',
+            background: msg.startsWith('✅') ? '#065f46' : msg.startsWith('⚡') ? '#075985' : '#7f1d1d',
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: 'bold',
+          }}
+        >
+          {msg}
         </div>
       )}
 
-      {/* Top Header Card */}
-      <div style={{ padding: '12px', background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ color: '#64748b', fontSize: '10px' }}>TOTAL LOGS</div>
-            <div style={{ color: 'white', fontWeight: 'bold', fontSize: '20px' }}>{logs.length}</div>
-          </div>
-          <div style={{ padding: '4px 10px', borderRadius: '8px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)' }}>
-            <div style={{ color: '#38bdf8', fontSize: '9px', fontWeight: 'bold' }}>PHOTO STORAGE</div>
-            <div style={{ color: 'white', fontWeight: 'bold', fontSize: '12px' }}>
-              💾 {storageStats.count} photos ({storageStats.kb} KB)
-            </div>
-          </div>
-          {SEVERITY.map((s) => (
-            <div key={s.id} style={{ padding: '4px 8px', borderRadius: '8px', background: s.color + '15', border: '1px solid ' + s.color + '30' }}>
-              <div style={{ color: s.color, fontSize: '9px', fontWeight: 'bold' }}>
-                {s.label.toUpperCase()} {s.range}
-              </div>
-              <div style={{ color: 'white', fontWeight: 'bold' }}>{bySev[s.id] || 0}</div>
-            </div>
-          ))}
+      {/* Observation Entry Form */}
+      <div
+        style={{
+          background: '#0f172a',
+          padding: '18px',
+          borderRadius: '16px',
+          border: '1px solid #334155',
+          marginBottom: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#cbd5e1' }}>
+            1. Select Condition
+          </span>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>
+            Tap any condition to view physical cues & rate
+          </span>
         </div>
-        <button
-          onClick={handleDeleteAll}
-          disabled={logs.length === 0}
+
+        {/* Condition Buttons Grid */}
+        <div
           style={{
-            padding: '10px 16px',
-            borderRadius: '10px',
-            background: logs.length === 0 ? '#334155' : '#7f1d1d',
-            color: 'white',
-            fontWeight: 'bold',
-            border: '1px solid #ef4444',
-            cursor: logs.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: logs.length === 0 ? 0.5 : 1,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(135px, 1fr))',
+            gap: '8px',
+            marginBottom: '16px',
           }}
         >
-          🗑️ Delete All ({logs.length})
-        </button>
-      </div>
-
-      {/* Main Submission Form */}
-      <div style={{ padding: '16px', background: '#1e293b', borderRadius: '16px', border: '1px solid #334155' }}>
-        <h2 style={{ color: 'white', fontWeight: 'bold', fontSize: '16px' }}>
-          Severity Logs • 29 Types + IndexedDB Photo Storage • {location.name} • {current.temperature}°
-        </h2>
-        <p style={{ color: '#4ade80', fontSize: '11px', marginTop: '2px' }}>
-          ✅ High-capacity storage • Main day photo + Timeline observation photos • Tap thumbnails to enlarge
-        </p>
-
-        {/* Severity Selector */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-          {SEVERITY.map((s) => {
-            const active = sev === s.id;
+          {CONDITIONS.map((cond) => {
+            const isSelected = selectedCondId === cond.id;
             return (
               <button
-                key={s.id}
-                onClick={() => setSev(s.id)}
+                key={cond.id}
+                onClick={() => setSelectedCondId(cond.id)}
                 style={{
-                  flex: 1,
-                  padding: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 10px',
                   borderRadius: '10px',
-                  border: active ? '2px solid ' + s.color : '1px solid #475569',
-                  background: active ? s.color + '25' : '#0f172a',
-                  color: active ? s.color : '#94a3b8',
-                  fontWeight: active ? 'bold' : 'normal',
                   cursor: 'pointer',
+                  textAlign: 'left',
+                  border: isSelected ? `2px solid ${cond.color}` : '1px solid #1e293b',
+                  background: isSelected ? `${cond.color}25` : '#1e293b',
+                  color: isSelected ? '#ffffff' : '#94a3b8',
+                  fontWeight: isSelected ? 'bold' : 'normal',
+                  fontSize: '12px',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <div style={{ fontSize: '12px' }}>{s.label.toUpperCase()}</div>
-                <div style={{ fontSize: '9px' }}>{s.range}</div>
+                <span style={{ fontSize: '16px' }}>{cond.emoji}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {cond.label}
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Condition Grid */}
-        {SEVERITY.map((level) => {
-          const levelConds = CONDITIONS.filter((c) => c.level === level.id).sort((a, b) => a.severity - b.severity);
-          return (
-            <div key={level.id} style={{ marginTop: '12px', padding: '10px', borderRadius: '12px', background: level.color + '10', border: '1px solid ' + level.color + '30' }}>
-              <div style={{ color: level.color, fontSize: '11px', fontWeight: 'bold' }}>
-                {level.label.toUpperCase()} • Sev {level.range} • {levelConds.length} types • {level.desc}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '6px', marginTop: '8px' }}>
-                {levelConds.map((c) => {
-                  const active = selected === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelected(c.id)}
-                      style={{
-                        padding: '8px',
-                        borderRadius: '10px',
-                        border: active ? '2px solid #38bdf8' : '1px solid #475569',
-                        background: active ? 'rgba(56,189,248,0.25)' : '#0f172a',
-                        color: 'white',
-                        cursor: 'pointer',
-                        position: 'relative',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ position: 'absolute', top: '4px', right: '6px', fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>{c.severity}</div>
-                      <div style={{ fontSize: '18px' }}>{c.emoji}</div>
-                      <div style={{ fontSize: '10px', fontWeight: 'bold' }}>{c.label}</div>
-                      <div style={{ fontSize: '8px', color: '#64748b' }}>{c.group}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Multi-entry observation container */}
-        <div style={{ marginTop: '16px', padding: '12px', background: '#0f172a', borderRadius: '12px', border: '2px solid #22c55e' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#22c55e', fontSize: '13px', fontWeight: 'bold' }}>
-              📝 Timeline Observations ({changes.length} in this log)
-            </span>
-            <button
-              onClick={() => setChanges([...changes, { time: new Date().toTimeString().slice(0, 5), condition: selected, severity: sev }])}
-              style={{ padding: '8px 14px', borderRadius: '8px', background: '#22c55e', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}
-            >
-              + Add Observation
-            </button>
-          </div>
-          <p style={{ color: '#64748b', fontSize: '10px', marginTop: '4px' }}>
-            Capture timeline changes (e.g. 09:00 Sunny 📷 → 14:00 Heavy Rain 📷) with photo verification
-          </p>
-
-          {changes.map((ch, idx) => {
-            const cond = CONDITIONS.find((c) => c.id === ch.condition);
-            const sevColor = SEVERITY.find((s) => s.id === ch.severity)?.color || '#64748b';
-            return (
-              <div
-                key={idx}
+        {/* Interactive Observation Guide Card */}
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            borderRadius: '12px',
+            border: `1.5px solid ${activeCondition.color}`,
+            padding: '14px',
+            marginBottom: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px' }}>{activeCondition.emoji}</span>
+              <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#ffffff' }}>
+                {activeCondition.label}
+              </span>
+              <span
                 style={{
-                  display: 'flex',
-                  gap: '6px',
-                  marginTop: '10px',
-                  padding: '10px',
-                  background: '#1e293b',
-                  borderRadius: '10px',
-                  border: '1px solid #334155',
-                  borderLeft: '5px solid ' + sevColor,
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
+                  fontSize: '10px',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: activeCondition.color,
+                  color: '#ffffff',
+                  fontWeight: 'bold',
+                  textTransform: 'uppercase',
                 }}
               >
-                <span style={{ color: sevColor, fontWeight: 'bold', fontSize: '12px' }}>{idx + 1}.</span>
-                <input
-                  type="time"
-                  value={ch.time}
-                  onChange={(e) => {
-                    const c = [...changes];
-                    c[idx].time = e.target.value;
-                    setChanges(c);
-                  }}
-                  style={{ padding: '6px', borderRadius: '6px', background: '#0f172a', border: '1px solid #475569', color: 'white', fontSize: '12px' }}
-                />
-                <select
-                  value={ch.condition}
-                  onChange={(e) => {
-                    const c = [...changes];
-                    c[idx].condition = e.target.value;
-                    const newCond = CONDITIONS.find((x) => x.id === e.target.value);
-                    if (newCond) c[idx].severity = newCond.level;
-                    setChanges([...c]);
-                  }}
-                  style={{ padding: '6px', borderRadius: '6px', background: '#0f172a', color: 'white', border: '1px solid #475569', fontSize: '11px', minWidth: '150px' }}
-                >
-                  {CONDITIONS.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.severity}. {c.emoji} {c.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={ch.severity}
-                  onChange={(e) => {
-                    const c = [...changes];
-                    c[idx].severity = e.target.value;
-                    setChanges([...c]);
-                  }}
-                  style={{ padding: '6px', borderRadius: '6px', background: sevColor + '25', color: sevColor, border: '2px solid ' + sevColor, fontSize: '11px', fontWeight: 'bold' }}
-                >
-                  {SEVERITY.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ color: '#64748b', fontSize: '10px' }}>Sev {cond?.severity}/29</span>
+                {activeCondition.severity}
+              </span>
+            </div>
+            <span style={{ fontSize: '11px', color: '#38bdf8', fontFamily: 'monospace', fontWeight: 'bold' }}>
+              {activeCondition.rate}
+            </span>
+          </div>
 
-                {/* Timeline Photo Picker */}
-                <ObservationImagePicker
-                  value={ch.photo}
-                  onChange={(url) => {
-                    const c = [...changes];
-                    c[idx].photo = url;
-                    setChanges([...c]);
-                  }}
-                  onPreview={(url) => setLightboxImg(url)}
-                />
-
-                <button
-                  onClick={() => {
-                    if (changes.length > 1) setChanges(changes.filter((_, i) => i !== idx));
-                  }}
-                  disabled={changes.length === 1}
-                  style={{
-                    padding: '6px 10px',
-                    background: changes.length === 1 ? '#334155' : '#7f1d1d',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: changes.length === 1 ? 'not-allowed' : 'pointer',
-                    opacity: changes.length === 1 ? 0.5 : 1,
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            );
-          })}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: '#cbd5e1' }}>
+            <div>
+              <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>👀 Physical ground cues: </span>
+              {activeCondition.cues}
+            </div>
+            <div>
+              <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>🚗 Real-world impact: </span>
+              {activeCondition.impact}
+            </div>
+          </div>
         </div>
 
-        {/* Main Photo & Summary Note Bar */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Overall day summary / notes..."
-            style={{ flex: 1, minWidth: '220px', padding: '10px', borderRadius: '8px', background: '#0f172a', border: '1px solid #475569', color: 'white' }}
-          />
-
-          {/* Main Photo for entire day log */}
-          <div style={{ padding: '4px 8px', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
-            <ObservationImagePicker
-              value={mainPhoto}
-              onChange={(url) => setMainPhoto(url)}
-              label="📷 Main Photo"
-              onPreview={(url) => setLightboxImg(url)}
+        {/* Observation Details: Time, Temp, Note, Photo */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+              Observation Time
+            </label>
+            <input
+              type="text"
+              value={obsTime}
+              onChange={(e) => setObsTime(e.target.value)}
+              placeholder="10:30"
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '8px',
+                background: '#1e293b',
+                border: '1px solid #334155',
+                color: 'white',
+                fontSize: '13px',
+                fontFamily: 'monospace',
+              }}
             />
           </div>
 
-          <button
-            onClick={handleAdd}
-            style={{
-              padding: '12px 20px',
-              borderRadius: '10px',
-              background: SEVERITY.find((s) => s.id === sev)?.color || '#0ea5e9',
-              color: 'white',
-              fontWeight: 'bold',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            ➕ Save Log ({changes.length} Obs) • {sev.toUpperCase()}
-          </button>
-        </div>
-        <div style={{ color: '#4ade80', fontSize: '12px', marginTop: '8px' }}>{msg}</div>
-      </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+              Observed Temp (°C)
+            </label>
+            <input
+              type="number"
+              value={temperature}
+              onChange={(e) => setTemperature(Number(e.target.value))}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '8px',
+                background: '#1e293b',
+                border: '1px solid #334155',
+                color: 'white',
+                fontSize: '13px',
+              }}
+            />
+          </div>
 
-      {/* Saved Logs Feed */}
-      <div style={{ padding: '16px', background: '#1e293b', borderRadius: '16px', border: '1px solid #334155' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ color: 'white', fontWeight: 'bold' }}>Logs History ({visibleLogs.length})</h3>
-          <button
-            onClick={handleDeleteAll}
-            disabled={logs.length === 0}
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+            <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+              Photo (Optional)
+            </label>
+            <ObservationImagePicker
+              value={photo}
+              onChange={setPhoto}
+              label="📷 Snap / Upload"
+              onPreview={(img) => setLightboxImg(img)}
+            />
+          </div>
+        </div>
+
+        {/* Note input */}
+        <div style={{ marginBottom: '14px' }}>
+          <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+            Ground Notes (Optional)
+          </label>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g., Heavy water pooling on Soi Fa, wind gusts rattling windows..."
             style={{
-              padding: '8px 14px',
+              width: '100%',
+              padding: '9px 12px',
               borderRadius: '8px',
-              background: logs.length === 0 ? '#334155' : '#7f1d1d',
+              background: '#1e293b',
+              border: '1px solid #334155',
               color: 'white',
-              fontWeight: 'bold',
-              border: '1px solid #ef4444',
-              cursor: logs.length === 0 ? 'not-allowed' : 'pointer',
               fontSize: '12px',
             }}
-          >
-            🗑️ Delete All
-          </button>
+          />
         </div>
 
-        {/* City filter pills */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-          {[
-            { id: true, label: `📍 ${location.name} (${cityLogs.length})` },
-            { id: false, label: `🌐 All Cities (${logs.length})` },
-          ].map((p) => (
+        {/* Submit Button */}
+        <button
+          onClick={handleSaveObservation}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '10px',
+            fontWeight: 'bold',
+            fontSize: '14px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+          }}
+        >
+          ＋ Add to {location.name} Timeline
+        </button>
+      </div>
+
+      {/* Timeline Feed History */}
+      <div style={{ background: '#0f172a', padding: '16px', borderRadius: '16px', border: '1px solid #334155' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', gap: '6px' }}>
             <button
-              key={String(p.id)}
-              onClick={() => setCityOnly(p.id)}
+              onClick={() => setCityOnly(true)}
               style={{
                 padding: '6px 12px',
-                borderRadius: '999px',
+                borderRadius: '8px',
                 fontSize: '11px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
-                color: cityOnly === p.id ? 'white' : '#94a3b8',
-                background: cityOnly === p.id ? '#0284c7' : '#0f172a',
-                border: '1px solid ' + (cityOnly === p.id ? '#38bdf8' : '#334155'),
+                background: cityOnly ? '#0284c7' : '#1e293b',
+                color: 'white',
+                border: cityOnly ? '1px solid #38bdf8' : '1px solid #334155',
               }}
             >
-              {p.label}
+              📍 {location.name} ({cityLogs.length})
             </button>
-          ))}
+            <button
+              onClick={() => setCityOnly(false)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                background: !cityOnly ? '#0284c7' : '#1e293b',
+                color: 'white',
+                border: !cityOnly ? '1px solid #38bdf8' : '1px solid #334155',
+              }}
+            >
+              🌐 All Cities ({logs.length})
+            </button>
+          </div>
+
+          {logs.length > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: '#7f1d1d30',
+                border: '1px solid #7f1d1d80',
+                color: '#f87171',
+                fontSize: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              Clear All Logs
+            </button>
+          )}
         </div>
 
-        {visibleLogs.map((log: any) => {
-          const col = SEVERITY.find((s) => s.id === log.severity)?.color || '#475569';
-          const mainPhotoSrc = (log.mainPhotoId && photoCache[log.mainPhotoId]) || log.mainPhoto;
+        {/* Timeline Items */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {visibleLogs.map((log: any) => {
+            const photoSrc =
+              (log.photoId && photoCache[log.photoId]) ||
+              (log.mainPhotoId && photoCache[log.mainPhotoId]) ||
+              log.photo ||
+              log.mainPhoto;
 
-          return (
-            <div key={log.id} style={{ padding: '12px', background: '#0f172a', borderRadius: '12px', marginTop: '10px', border: '1px solid #334155', borderLeft: '6px solid ' + col }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ background: col, color: 'white', padding: '3px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold' }}>
-                  {log.severity?.toUpperCase()} • Sev {log.sevNum}/29 • {log.changeCount || 1} obs
-                </span>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span style={{ color: '#64748b', fontSize: '10px' }}>{new Date(log.logged_at).toLocaleString()}</span>
-                  <button onClick={() => handleDeleteOne(log.id)} style={{ padding: '6px 10px', background: '#7f1d1d', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px' }}>
-                    🗑️ Delete
-                  </button>
+            const condMatch =
+              CONDITIONS.find((c) => c.id === log.condition) ||
+              CONDITIONS.find((c) => c.label.toLowerCase().includes((log.condition || '').toLowerCase()));
+
+            const badgeColor = log.severityColor || condMatch?.color || '#38bdf8';
+            const displayTime = log.time || new Date(log.logged_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const displayDate = new Date(log.logged_at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+            return (
+              <div
+                key={log.id}
+                style={{
+                  padding: '12px',
+                  background: '#1e293b',
+                  borderRadius: '12px',
+                  border: '1px solid #334155',
+                  borderLeft: `5px solid ${badgeColor}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>{log.emoji || condMatch?.emoji || '🌤️'}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#ffffff' }}>
+                      {log.conditionLabel || condMatch?.label || log.condition}
+                    </span>
+                    {log.temperature !== undefined && (
+                      <span style={{ fontSize: '12px', color: '#38bdf8', fontWeight: 'bold' }}>
+                        {log.temperature}°C
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        background: `${badgeColor}30`,
+                        border: `1px solid ${badgeColor}`,
+                        color: badgeColor,
+                        fontWeight: 'bold',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {log.severity || condMatch?.severity || 'obs'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                      {displayDate} • {displayTime}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteOne(log.id)}
+                      style={{
+                        padding: '4px 8px',
+                        background: '#7f1d1d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                      }}
+                      title="Delete entry"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
+
+                {/* Legacy timeline string support if present */}
+                {log.timeline && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                    {log.timeline}
+                  </div>
+                )}
+
+                {/* Observation Note */}
+                {log.note && (
+                  <div style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: '1.4' }}>
+                    {log.note}
+                  </div>
+                )}
+
+                {/* Photo Thumbnail */}
+                {photoSrc && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <img
+                      src={photoSrc}
+                      alt="Observation photo"
+                      onClick={() => setLightboxImg(photoSrc)}
+                      style={{
+                        height: '60px',
+                        width: '60px',
+                        objectFit: 'cover',
+                        borderRadius: '8px',
+                        border: '1.5px solid #38bdf8',
+                        cursor: 'pointer',
+                      }}
+                      title="Click to view full image"
+                    />
+                    <span style={{ fontSize: '10px', color: '#94a3b8' }}>Tap to view photo</span>
+                  </div>
+                )}
               </div>
+            );
+          })}
 
-              {/* Main Photo Thumbnail in Log */}
-              {mainPhotoSrc && (
-                <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <img
-                    src={mainPhotoSrc}
-                    alt="Main Weather Log"
-                    onClick={() => setLightboxImg(mainPhotoSrc)}
-                    style={{ height: '60px', width: '60px', objectFit: 'cover', borderRadius: '8px', border: '2px solid #38bdf8', cursor: 'pointer' }}
-                    title="Click to expand"
-                  />
-                  <span style={{ color: '#38bdf8', fontSize: '11px' }}>📷 Main Observation Photo (Tap to enlarge)</span>
-                </div>
-              )}
-
-              <div style={{ color: 'white', fontSize: '13px', marginTop: '8px', fontWeight: 'bold' }}>
-                {log.timeline || CONDITIONS.find((c) => c.id === log.condition)?.emoji + ' ' + log.condition}
-              </div>
-
-              {/* Timeline Changes & Photos */}
-              {log.changes && (
-                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {log.changes.map((ch: any, i: number) => {
-                    const c = CONDITIONS.find((x) => x.id === ch.condition);
-                    const col2 = SEVERITY.find((s) => s.id === ch.severity)?.color;
-                    const chPhotoSrc = (ch.photoId && photoCache[ch.photoId]) || ch.photo;
-
-                    return (
-                      <div key={i} style={{ fontSize: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ color: '#64748b', fontFamily: 'monospace' }}>{ch.time}</span>
-                        {chPhotoSrc && (
-                          <img
-                            src={chPhotoSrc}
-                            alt=""
-                            onClick={() => setLightboxImg(chPhotoSrc)}
-                            style={{ height: '32px', width: '32px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #38bdf8', cursor: 'pointer' }}
-                            title="Click to view full photo"
-                          />
-                        )}
-                        <span>
-                          {c?.emoji} {c?.label} (Sev {c?.severity}/29)
-                        </span>
-                        <span style={{ background: col2 + '30', color: col2, padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', border: '1px solid ' + col2 }}>
-                          {ch.severity.toUpperCase()}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {log.note && <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '6px' }}>{log.note}</div>}
+          {visibleLogs.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '24px', color: '#64748b', fontSize: '12px' }}>
+              {cityOnly && logs.length > 0
+                ? `No timeline observations for ${location.name} yet — switch to "All Cities" to see entries from other locations.`
+                : 'No timeline observations recorded yet. Add your first observation above!'}
             </div>
-          );
-        })}
-
-        {visibleLogs.length === 0 && <div style={{ color: '#475569', fontSize: '12px', marginTop: '12px', textAlign: 'center', padding: '20px' }}>{cityOnly && logs.length > 0 ? `No logs for ${location.name} yet — switch to "All Cities" to see your other entries` : 'No logs yet - add your first multi-observation log above'}</div>}
+          )}
+        </div>
       </div>
     </div>
   );
