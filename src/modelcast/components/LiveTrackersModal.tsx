@@ -76,6 +76,31 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
   const [updatedAt, setUpdatedAt] = useState<Date>(new Date());
   const [openId, setOpenId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [showHydroDrawer, setShowHydroDrawer] = useState(false);
+
+  // Live River & Atmospheric State
+  const [river, setRiver] = useState<{
+    today: number;
+    pastMin: number;
+    pastMax: number;
+    surgePct: number;
+    forecastMax: number;
+    level: 'critical' | 'watch' | 'advisory' | 'safe';
+    trend: 'rising' | 'peaking' | 'receding' | 'stable';
+    history: { date: string; flow: number }[];
+    forecast: { date: string; flow: number }[];
+  } | null>(null);
+
+  const [atmo, setAtmo] = useState<{
+    feelsLike: number;
+    temp: number;
+    humidity: number;
+    windGusts: number;
+    maxGustsToday: number;
+    rain3DaySum: number;
+    stormProb: number;
+    isThunderstorm: boolean;
+  } | null>(null);
 
   const lat = location?.latitude ?? 13.54;
   const lon = location?.longitude ?? 99.82;
@@ -91,33 +116,139 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
     let mounted = true;
     setLoading(true);
     setError(null);
-    callFunction<{ alerts?: WeatherAlertData[]; error?: string }>('weather-alerts', { lat, lon })
-      .then((data) => {
+
+    // Parallel fetch: Official warnings + GloFAS river discharge + Live atmospheric telemetry
+    const pAlerts = callFunction<{ alerts?: WeatherAlertData[]; error?: string }>('weather-alerts', { lat, lon })
+      .catch(() => ({ alerts: [] }));
+
+    const pRiver = fetch(
+      `https://flood-api.open-meteo.com/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge,river_discharge_max,river_discharge_min&past_days=7&forecast_days=7&models=seamless_v4`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+
+    const pAtmo = fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_gusts_10m,weather_code&daily=precipitation_sum,precipitation_probability_max,wind_gusts_10m_max&past_days=3&forecast_days=3&timezone=auto`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+
+    Promise.all([pAlerts, pRiver, pAtmo])
+      .then(([alertRes, riverRes, atmoRes]) => {
         if (!mounted) return;
-        if (data.error && (!data.alerts || data.alerts.length === 0)) {
-          setError(data.error);
-          setAlerts([]);
-        } else {
-          setAlerts(data.alerts ?? []);
+
+        // Process River Discharge Data (GloFAS Copernicus)
+        let computedRiver: typeof river = null;
+        if (riverRes?.daily?.river_discharge?.length >= 8) {
+          const times: string[] = riverRes.daily.time ?? [];
+          const flows: number[] = riverRes.daily.river_discharge ?? [];
+          const todayIdx = 7; // index 7 is today (7 past days: 0..6)
+          const todayFlow = flows[todayIdx] ?? flows[flows.length - 1] ?? 0;
+          const pastFlows = flows.slice(0, 7);
+          const pastMin = pastFlows.length ? Math.min(...pastFlows) : todayFlow;
+          const pastMax = pastFlows.length ? Math.max(...pastFlows) : todayFlow;
+          const forecastFlows = flows.slice(7);
+          const forecastMax = forecastFlows.length ? Math.max(...forecastFlows) : todayFlow;
+
+          const baseline = pastMin > 1 ? pastMin : 10;
+          const surgePct = todayFlow > baseline ? ((todayFlow - baseline) / baseline) * 100 : 0;
+
+          let level: 'critical' | 'watch' | 'advisory' | 'safe' = 'safe';
+          if ((surgePct >= 120 || todayFlow >= 3000) && todayFlow > 50) {
+            level = 'critical';
+          } else if ((surgePct >= 60 || todayFlow >= 1500) && todayFlow > 30) {
+            level = 'watch';
+          } else if ((surgePct >= 25 || todayFlow >= 500) && todayFlow > 15) {
+            level = 'advisory';
+          }
+
+          const tomorrowFlow = flows[todayIdx + 1] ?? todayFlow;
+          let trend: 'rising' | 'peaking' | 'receding' | 'stable' = 'stable';
+          if (tomorrowFlow > todayFlow * 1.05) trend = 'rising';
+          else if (tomorrowFlow < todayFlow * 0.95) trend = 'receding';
+          else if (todayFlow >= forecastMax * 0.95 && todayFlow > pastMin * 1.5) trend = 'peaking';
+
+          const history = times.slice(0, 8).map((t, idx) => ({ date: t, flow: flows[idx] ?? 0 }));
+          const forecast = times.slice(8).map((t, idx) => ({ date: t, flow: flows[8 + idx] ?? 0 }));
+
+          computedRiver = {
+            today: todayFlow,
+            pastMin,
+            pastMax,
+            surgePct,
+            forecastMax,
+            level,
+            trend,
+            history,
+            forecast,
+          };
+          setRiver(computedRiver);
         }
+
+        // Process Atmospheric Data
+        if (atmoRes) {
+          const cur = atmoRes.current ?? {};
+          const daily = atmoRes.daily ?? {};
+          const pastRains: number[] = (daily.precipitation_sum ?? []).slice(0, 3);
+          const rain3Day = pastRains.reduce((a: number, b: number) => a + (b || 0), 0);
+          const weatherCode = cur.weather_code ?? 0;
+          const stormProb = (daily.precipitation_probability_max ?? [])[3] ?? (daily.precipitation_probability_max ?? [])[0] ?? 0;
+          const maxGustsToday = (daily.wind_gusts_10m_max ?? [])[3] ?? cur.wind_gusts_10m ?? 0;
+
+          setAtmo({
+            feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m ?? 32),
+            temp: Math.round(cur.temperature_2m ?? 30),
+            humidity: Math.round(cur.relative_humidity_2m ?? 70),
+            windGusts: Math.round(cur.wind_gusts_10m ?? 15),
+            maxGustsToday: Math.round(maxGustsToday),
+            rain3DaySum: Math.round(rain3Day * 10) / 10,
+            stormProb: Math.round(stormProb),
+            isThunderstorm: weatherCode >= 95,
+          });
+        }
+
+        // Combine Alerts
+        const incomingAlerts: WeatherAlertData[] = alertRes.alerts ?? [];
+        const combinedAlerts = [...incomingAlerts];
+
+        // Synthesize high-priority River Warning if GloFAS detects an elevated or critical surge
+        if (computedRiver && (computedRiver.level === 'critical' || computedRiver.level === 'watch')) {
+          const isCritical = computedRiver.level === 'critical';
+          combinedAlerts.unshift({
+            id: 'river-surge-' + locName.toLowerCase(),
+            area: `${locName} Basin (${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E)`,
+            alertType: isCritical ? '🌊 River Surge Emergency Warning' : '🌊 River Basin Flood Watch',
+            severity: isCritical ? 'extreme' : 'severe',
+            certainty: 'Observed',
+            onset: new Date().toISOString(),
+            expires: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+            description: `Global Flood Awareness System (GloFAS / Copernicus ECMWF) reports river discharge currently surging at ${Math.round(computedRiver.today).toLocaleString()} m³/s (+${Math.round(computedRiver.surgePct)}% above 7-day baseline of ${Math.round(computedRiver.pastMin).toLocaleString()} m³/s).\n\nRiverbanks, canal junctions, and low-lying agricultural zones along the basin are at high risk of bank overflow and severe waterlogging.`,
+            instruction: `1. Avoid riverbanks, canal retention basins, and low bridges.\n2. Move valuable equipment, livestock, and vehicles to higher ground.\n3. Monitor real-time sluice gate announcements from the local irrigation department (RID / TMD).`,
+            source: 'Copernicus GloFAS Seamless v4 & Open-Meteo Flood API',
+          });
+        }
+
+        setAlerts(combinedAlerts);
         setUpdatedAt(new Date());
       })
       .catch((e: Error) => {
         if (!mounted) return;
         setError(e.message);
-        setAlerts([]);
       })
       .finally(() => {
         if (mounted) setLoading(false);
       });
-    return () => { mounted = false; };
-  }, [lat, lon, tick]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [lat, lon, tick, locName]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-300">
         <Loader2 size={32} className="animate-spin mb-3 text-amber-400" />
-        <span className="text-base font-semibold">Scanning severe weather threats for {locName}...</span>
+        <span className="text-base font-semibold">Scanning severe weather &amp; river basin threats for {locName}...</span>
       </div>
     );
   }
@@ -144,7 +275,7 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
       <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-slate-800">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-amber-400 animate-pulse shadow-sm shadow-amber-500" />
-          <span className="text-sm text-white font-bold tracking-wide">SEVERE WEATHER &bull; {locName}</span>
+          <span className="text-sm text-white font-bold tracking-wide">SEVERE WEATHER &amp; RIVER HAZARDS &bull; {locName}</span>
         </div>
         <span className="text-xs text-slate-400 font-medium">
           Updated {fmtICT(updatedAt)} ICT &bull; auto-refreshes 5m
@@ -173,12 +304,12 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
             {hasSevere ? '⚠️ EMERGENCY WARNING' : hasModerate ? '⚡ WEATHER ADVISORY' : alerts.length > 0 ? 'ℹ️ WEATHER NOTICE' : '✅ ALL CLEAR'}
           </div>
           <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
-            {highestAlert ? highestAlert.alertType : `No Active Weather Emergencies`}
+            {highestAlert ? highestAlert.alertType : 'No Active Weather Emergencies'}
           </h2>
           <p className="text-sm font-medium text-slate-200/90 mt-0.5">
             {highestAlert
               ? `${locName} (${lat.toFixed(2)}, ${lon.toFixed(2)}) • ${endsIn(highestAlert.expires)}`
-              : `Current atmosphere over ${locName} is calm with no official storm or flood warnings.`}
+              : `Atmosphere & river levels over ${locName} are currently within safe baseline ranges.`}
           </p>
         </div>
 
@@ -190,55 +321,213 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
         </div>
       </div>
 
-      {/* 4-Pillar Daily Hazard Matrix (Always useful even when 0 formal alerts) */}
+      {/* 4-Pillar Daily Hazard Matrix (Powered by Live Hydrology + Atmospheric Feeds) */}
       <div className="space-y-1.5">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
-          Atmospheric Hazard Matrix
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Atmospheric &amp; River Hazard Matrix
+          </span>
+          <span className="text-[11px] text-slate-500 font-medium">Live sensor &amp; model feeds</span>
         </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* 1. Lightning & Storms */}
           <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
             <div className="flex items-center justify-between text-xs font-bold text-slate-400">
               <span>⚡ Lightning</span>
-              <span className="text-emerald-400">LOW</span>
+              <span className={atmo?.isThunderstorm || (atmo?.stormProb ?? 0) >= 70 ? 'text-amber-400' : 'text-emerald-400'}>
+                {atmo?.isThunderstorm ? 'HIGH' : (atmo?.stormProb ?? 0) >= 50 ? 'ELEVATED' : 'LOW'}
+              </span>
             </div>
-            <div className="text-base font-extrabold text-white mt-1">Scattered</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Under 10 strikes/hr</div>
+            <div className="text-base font-extrabold text-white mt-1">
+              {atmo?.isThunderstorm ? 'Active Cells' : (atmo?.stormProb ?? 0) >= 50 ? 'Rain Showers' : 'Scattered'}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              {atmo ? `${atmo.stormProb}% precip prob` : 'Under 10 strikes/hr'}
+            </div>
           </div>
 
-          <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-400">
-              <span>🌊 Flash Flood</span>
-              <span className="text-emerald-400">SAFE</span>
+          {/* 2. Live River & Flash Flood */}
+          <button
+            type="button"
+            onClick={() => setShowHydroDrawer((s) => !s)}
+            className={`rounded-xl p-3 shadow-sm text-left transition-all border ${
+              river?.level === 'critical'
+                ? 'bg-red-500/20 border-red-500/60 hover:bg-red-500/25 ring-1 ring-red-500/50'
+                : river?.level === 'watch'
+                ? 'bg-amber-500/20 border-amber-500/60 hover:bg-amber-500/25'
+                : 'bg-slate-800/80 border-slate-700 hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-slate-300">🌊 River Flood</span>
+              <span
+                className={
+                  river?.level === 'critical'
+                    ? 'text-red-300 animate-pulse font-black'
+                    : river?.level === 'watch'
+                    ? 'text-amber-300 font-bold'
+                    : 'text-emerald-400'
+                }
+              >
+                {river?.level === 'critical' ? 'SURGE' : river?.level === 'watch' ? 'WATCH' : 'SAFE'}
+              </span>
             </div>
-            <div className="text-base font-extrabold text-white mt-1">Normal</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">3-Day rain &lt; 25mm</div>
-          </div>
+            <div className="text-base font-extrabold text-white mt-1">
+              {river && river.today > 10 ? `${Math.round(river.today).toLocaleString()} m³/s` : 'Normal Flow'}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center justify-between">
+              <span>{river && river.surgePct > 10 ? `+${Math.round(river.surgePct)}% surge` : '3-Day rain < 25mm'}</span>
+              <span className="text-[10px] text-sky-400 font-bold">{showHydroDrawer ? '▲ Hide' : '▼ Hydro'}</span>
+            </div>
+          </button>
 
+          {/* 3. Wind Gusts */}
           <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
             <div className="flex items-center justify-between text-xs font-bold text-slate-400">
               <span>💨 Wind Gusts</span>
-              <span className="text-emerald-400">CALM</span>
+              <span className={(atmo?.maxGustsToday ?? 0) >= 50 ? 'text-red-400' : (atmo?.maxGustsToday ?? 0) >= 30 ? 'text-amber-400' : 'text-emerald-400'}>
+                {(atmo?.maxGustsToday ?? 0) >= 50 ? 'GALE' : (atmo?.maxGustsToday ?? 0) >= 30 ? 'GUSTY' : 'CALM'}
+              </span>
             </div>
-            <div className="text-base font-extrabold text-white mt-1">15–25 km/h</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Breeze &bull; safe</div>
+            <div className="text-base font-extrabold text-white mt-1">
+              {atmo ? `${atmo.windGusts}–${atmo.maxGustsToday} km/h` : '15–25 km/h'}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              {(atmo?.maxGustsToday ?? 0) >= 35 ? 'Hold loose objects' : 'Breeze • safe'}
+            </div>
           </div>
 
+          {/* 4. Heat Index */}
           <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 shadow-sm">
             <div className="flex items-center justify-between text-xs font-bold text-slate-400">
               <span>🌡️ Heat Index</span>
-              <span className="text-amber-400">CAUTION</span>
+              <span className={(atmo?.feelsLike ?? 32) >= 41 ? 'text-red-400' : (atmo?.feelsLike ?? 32) >= 35 ? 'text-amber-400' : 'text-emerald-400'}>
+                {(atmo?.feelsLike ?? 32) >= 41 ? 'DANGER' : (atmo?.feelsLike ?? 32) >= 35 ? 'CAUTION' : 'NORMAL'}
+              </span>
             </div>
-            <div className="text-base font-extrabold text-amber-300 mt-1">Feels 37°C</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Stay hydrated</div>
+            <div className="text-base font-extrabold text-amber-300 mt-1">
+              Feels {atmo?.feelsLike ?? 37}°C
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              {atmo ? `${atmo.temp}°C • ${atmo.humidity}% RH` : 'Stay hydrated'}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Interactive River Basin Hydrograph Drawer */}
+      {showHydroDrawer && river && (
+        <div className="rounded-2xl border border-sky-500/40 bg-sky-950/20 p-4 space-y-3 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🌊</span>
+              <div>
+                <h4 className="text-sm font-extrabold text-white">
+                  River Basin Telemetry &bull; {locName}
+                </h4>
+                <p className="text-[11px] text-sky-200/80">
+                  Global Flood Awareness System (GloFAS Copernicus Seamless v4)
+                </p>
+              </div>
+            </div>
+            <span
+              className={`px-2.5 py-1 rounded-full text-xs font-black uppercase ${
+                river.level === 'critical'
+                  ? 'bg-red-500/30 text-red-300 border border-red-500/50'
+                  : river.level === 'watch'
+                  ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                  : 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
+              }`}
+            >
+              {river.level === 'critical' ? '⚠️ Severe River Surge' : river.level === 'watch' ? '⚡ Flood Watch' : 'Normal Basin Flow'}
+            </span>
+          </div>
+
+          {/* Hydro Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+            <div className="rounded-xl bg-slate-900/80 border border-slate-700/60 p-2.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Current Discharge</span>
+              <span className="text-base sm:text-lg font-black text-white">
+                {Math.round(river.today).toLocaleString()} <span className="text-xs font-normal text-slate-400">m³/s</span>
+              </span>
+            </div>
+            <div className="rounded-xl bg-slate-900/80 border border-slate-700/60 p-2.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">7-Day Surge</span>
+              <span className={`text-base sm:text-lg font-black ${river.surgePct >= 80 ? 'text-red-400' : river.surgePct >= 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                +{Math.round(river.surgePct)}%
+              </span>
+            </div>
+            <div className="rounded-xl bg-slate-900/80 border border-slate-700/60 p-2.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">7-Day Baseline Low</span>
+              <span className="text-base sm:text-lg font-black text-slate-300">
+                {Math.round(river.pastMin).toLocaleString()} <span className="text-xs font-normal text-slate-400">m³/s</span>
+              </span>
+            </div>
+            <div className="rounded-xl bg-slate-900/80 border border-slate-700/60 p-2.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">Flow Trend</span>
+              <span className="text-base sm:text-lg font-black text-sky-300 capitalize">
+                {river.trend}
+              </span>
+            </div>
+          </div>
+
+          {/* Discharge Flow Mini-Timeline */}
+          <div className="rounded-xl bg-slate-900/60 border border-slate-700/50 p-3">
+            <span className="text-[11px] font-bold text-slate-300 block mb-2">
+              Recent Flow Progression &bull; 7-Day Buildup to Peak (m³/s)
+            </span>
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 text-center">
+              {river.history.map((h, i) => {
+                const isToday = i === river.history.length - 1;
+                const dateLabel = h.date.slice(5); // "09-30"
+                const pctOfMax = Math.min(100, Math.max(15, (h.flow / (river.pastMax || river.today || 1)) * 100));
+                return (
+                  <div
+                    key={h.date}
+                    className={`rounded-lg p-1.5 border transition-all ${
+                      isToday
+                        ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-bold ring-1 ring-sky-400/50'
+                        : 'bg-slate-800/60 border-slate-700/40 text-slate-400'
+                    }`}
+                  >
+                    <div className="text-[10px]">{isToday ? 'Today' : dateLabel}</div>
+                    <div className="h-8 flex items-end justify-center my-1">
+                      <div
+                        className={`w-full rounded-sm ${isToday ? 'bg-sky-400' : 'bg-slate-600'}`}
+                        style={{ height: `${pctOfMax}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-200 truncate">
+                      {Math.round(h.flow)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span>
+              💡 Volumetric flow &gt; 1,500 m³/s or surge &gt; +100% signals elevated riverbank overflow risk.
+            </span>
+            <a
+              href="https://www.thaiwater.net/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sky-400 hover:text-sky-300 font-semibold underline shrink-0 ml-2"
+            >
+              ThaiWater Hydro Station →
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Official Alert Cards List */}
       {sorted.length > 0 && (
         <div className="space-y-2.5">
           <div className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
-            Official TMD / Open-Meteo Bulletins
+            Active Bulletins &amp; Severe Warnings
           </div>
           {sorted.map((a) => {
             const colors = severityColor(a.severity);
@@ -301,16 +590,26 @@ function WarningsTracker({ location, onSelectTab }: { location: GeoLocation | nu
       <div className="rounded-xl bg-slate-800/80 border border-slate-700 p-3 text-xs text-slate-300 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Model Open-Meteo &bull; Official warnings cross-referenced with TMD</span>
+          <span>Real-time Copernicus GloFAS &bull; Official TMD &amp; Open-Meteo feeds</span>
         </div>
-        <a
-          href="https://www.tmd.go.th/en/"
-          target="_blank"
-          rel="noreferrer"
-          className="text-sky-400 hover:text-sky-300 underline font-semibold"
-        >
-          Check TMD Official Portal →
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href="https://www.thaiwater.net/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline font-semibold"
+          >
+            ThaiWater Portal →
+          </a>
+          <a
+            href="https://www.tmd.go.th/en/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300 underline font-semibold"
+          >
+            TMD Portal →
+          </a>
+        </div>
       </div>
     </div>
   );
