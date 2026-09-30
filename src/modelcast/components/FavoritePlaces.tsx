@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Star, X, MapPin } from 'lucide-react';
 import type { GeoLocation } from '@/modelcast/lib/types';
+import { useSettings } from '@/modelcast/lib/settings';
+import { formatTempWithUnit } from '@/modelcast/lib/units';
 
 interface FavoritePlacesProps {
   favorites: GeoLocation[];
@@ -18,7 +21,45 @@ export function FavoritePlaces({
   onRemove,
   onSelect,
 }: FavoritePlacesProps) {
+  const { units } = useSettings();
+  const [temperatures, setTemperatures] = useState<Record<number, number>>({});
   const canAdd = currentLocation && !isFavorite(currentLocation.id);
+
+  // Fetch current temperature for each favorite place
+  useEffect(() => {
+    if (favorites.length === 0) return;
+
+    let cancelled = false;
+
+    async function loadTemps() {
+      const updates: Record<number, number> = {};
+
+      await Promise.all(
+        favorites.map(async (fav) => {
+          try {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${fav.latitude}&longitude=${fav.longitude}&current=temperature_2m`;
+            const res = await fetch(url);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data?.current?.temperature_2m !== undefined) {
+              updates[fav.id] = data.current.temperature_2m;
+            }
+          } catch {
+            // Ignore individual fetch errors so others still display
+          }
+        }),
+      );
+
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setTemperatures((prev) => ({ ...prev, ...updates }));
+      }
+    }
+
+    loadTemps();
+    return () => {
+      cancelled = true;
+    };
+  }, [favorites]);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -34,22 +75,37 @@ export function FavoritePlaces({
 
       {favorites.map((fav) => {
         const active = currentLocation?.id === fav.id;
+        const temp = temperatures[fav.id];
+
         return (
           <div
             key={fav.id}
             className={`group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
               active
-                ? 'border-sky-400 bg-sky-500/20 text-sky-200'
-                : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                ? 'border-sky-400 bg-sky-500/20 text-sky-200 shadow-sm shadow-sky-500/20'
+                : 'border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600 hover:bg-slate-700/80'
             }`}
           >
             <button
               onClick={() => onSelect(fav)}
-              className="flex items-center gap-1.5"
+              className="flex items-center gap-1.5 focus:outline-none"
             >
               <MapPin size={12} className={active ? 'text-sky-400' : 'text-slate-400'} />
               <span className="max-w-[140px] truncate">{fav.name}</span>
+
+              {temp !== undefined && (
+                <span
+                  className={`ml-1 rounded px-1.5 py-0.2 text-[11px] font-semibold ${
+                    active
+                      ? 'bg-sky-500/30 text-sky-100'
+                      : 'bg-slate-700/80 text-slate-300'
+                  }`}
+                >
+                  {formatTempWithUnit(temp, units)}
+                </span>
+              )}
             </button>
+
             <button
               onClick={() => onRemove(fav.id)}
               className="ml-0.5 rounded-full p-0.5 text-slate-500 transition-colors hover:bg-red-500/20 hover:text-red-400"
