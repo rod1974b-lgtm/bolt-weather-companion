@@ -145,9 +145,13 @@ export function WeatherModelsLiveModal({
                 {filteredModels.map((model, index) => (
                   <div key={model.id} className={`rounded-2xl border p-4 ${index === 0 && !search ? 'border-amber-400/70 bg-amber-400/5' : 'border-slate-700/60 bg-slate-800/40'}`}>
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-slate-300">
-                        {index === 0 && !search ? <Trophy size={15} className="text-amber-400" /> : index + 1}
-                      </div>
+                      {index < 3 && !search ? (
+                        <img src={`/${index + 1}.png`} alt={`${index + 1}${index === 0 ? 'st' : index === 1 ? 'nd' : 'rd'} place medal`} className="h-12 w-12 shrink-0 object-contain" />
+                      ) : (
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-slate-300">
+                          {index + 1}
+                        </div>
+                      )}
                       <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: model.color }} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-white">{model.name}</p>
