@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { CurrentWeather, GeoLocation, HourlyForecast, DailyForecast, ModelAccuracy, VoteAggregate, WeatherModel } from '@/modelcast/lib/types';
+import { WEATHER_MODELS } from '@/modelcast/lib/weatherModels';
 import { getWeatherCodeInfo } from '@/modelcast/lib/weatherCodes';
 import { useSettings } from '@/modelcast/lib/settings';
 import {
@@ -146,14 +147,21 @@ export function TopModelForecast({
 }: TopModelForecastProps) {
   const { t, units } = useSettings();
   const [expandedDay, setExpandedDay] = useState(0);
+  const [selectedModelId, setSelectedModelId] = useState<string>('auto');
 
-  const modelData = hourly.models[model.id];
-  const dailyData = daily.models[model.id];
+  // Resolve active model: either user selection or highest-ranked auto model
+  const activeModel = useMemo(() => {
+    if (selectedModelId === 'auto') return model;
+    return WEATHER_MODELS.find((m) => m.id === selectedModelId) ?? model;
+  }, [selectedModelId, model]);
 
-  const voteAgg = votes.find((v) => v.model_id === model.id);
+  const modelData = hourly.models[activeModel.id] ?? hourly.models[model.id];
+  const dailyData = daily.models[activeModel.id] ?? daily.models[model.id];
+
+  const voteAgg = votes.find((v) => v.model_id === activeModel.id);
   const rating = voteAgg?.avg_rating ?? 0;
   const voteCount = voteAgg?.vote_count ?? 0;
-  const accuracyAgg = accuracy.find((a) => a.modelId === model.id && a.hasData);
+  const accuracyAgg = accuracy.find((a) => a.modelId === activeModel.id && a.hasData);
   const accuracyScore = accuracyAgg?.overallScore ?? null;
   const accuracyRank = accuracyAgg?.rank ?? null;
 
@@ -198,24 +206,54 @@ export function TopModelForecast({
 
   return (
     <div className="space-y-4">
-      {/* Top model badge */}
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700/50 bg-slate-800/40 p-4">
+      {/* Model banner with dropdown selector */}
+      <div className="flex flex-col gap-4 rounded-2xl border border-slate-700/50 bg-slate-800/40 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-xl"
-            style={{ backgroundColor: `${model.color}20` }}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors"
+            style={{ backgroundColor: `${activeModel.color}20` }}
           >
-            <Trophy size={20} style={{ color: model.color }} />
+            <Trophy size={20} style={{ color: activeModel.color }} />
           </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-              {t('topModelRank')}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                {selectedModelId === 'auto' ? t('topModelRank') : 'Active Forecast Model'}
+              </p>
+              {selectedModelId === 'auto' && (
+                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                  Auto #1
+                </span>
+              )}
+            </div>
+            <div className="relative mt-1">
+              <select
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value)}
+                className="w-full appearance-none rounded-lg border border-slate-700 bg-slate-900/80 py-1.5 pl-3 pr-8 text-base font-bold text-white transition-colors hover:border-slate-600 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer sm:w-auto sm:text-lg"
+              >
+                <option value="auto">
+                  ⭐ Auto: {model.name} (Top Ranked)
+                </option>
+                <optgroup label="Select Specific Model">
+                  {WEATHER_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {m.organization}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <ChevronDown
+                size={16}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {activeModel.organization} · {activeModel.region} · {activeModel.resolution}
             </p>
-            <h3 className="text-lg font-bold text-white">{model.name}</h3>
-            <p className="text-xs text-slate-500">{model.organization}</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           {accuracyScore !== null && (
             <div className="text-right">
               <div className="flex items-center gap-1">
@@ -223,7 +261,9 @@ export function TopModelForecast({
                 <span className="text-lg font-bold text-white">{accuracyScore.toFixed(0)}</span>
                 <span className="text-xs text-slate-500">/100</span>
               </div>
-              <p className="text-xs text-slate-500">{accuracyRank === 1 ? 'Most accurate' : `Accuracy #${accuracyRank}`}</p>
+              <p className="text-xs text-slate-500">
+                {accuracyRank === 1 ? 'Most accurate' : `Accuracy #${accuracyRank}`}
+              </p>
             </div>
           )}
           {rating > 0 ? (
@@ -232,7 +272,9 @@ export function TopModelForecast({
                 <Star size={16} className="fill-amber-400 text-amber-400" />
                 <span className="text-lg font-bold text-white">{rating.toFixed(1)}</span>
               </div>
-              <p className="text-xs text-slate-500">{voteCount} {voteCount === 1 ? t('vote') : t('votes')}</p>
+              <p className="text-xs text-slate-500">
+                {voteCount} {voteCount === 1 ? t('vote') : t('votes')}
+              </p>
             </div>
           ) : (
             <p className="text-xs text-slate-500">{t('topModelNoVotes')}</p>
@@ -254,8 +296,8 @@ export function TopModelForecast({
             {t('currentConditions')}
           </h3>
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: model.color }} />
-            <span className="text-xs font-medium text-slate-400">{model.shortName}</span>
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: activeModel.color }} />
+            <span className="text-xs font-medium text-slate-400">{activeModel.shortName}</span>
           </div>
         </div>
 
@@ -264,7 +306,7 @@ export function TopModelForecast({
           <div className="flex items-center gap-6">
             <div
               className="flex h-20 w-20 items-center justify-center rounded-3xl"
-              style={{ backgroundColor: `${model.color}15` }}
+              style={{ backgroundColor: `${activeModel.color}15` }}
             >
               <WeatherIcon code={currentCode} size={48} className="text-slate-100" />
             </div>
@@ -346,7 +388,7 @@ export function TopModelForecast({
             <MapPin size={15} className="text-sky-400" />
             <span>{location.name}{location.admin1 ? `, ${location.admin1}` : ''}, {location.country}</span>
             <span className="text-slate-600">·</span>
-            <span>{model.shortName} live forecast</span>
+            <span>{activeModel.shortName} live forecast</span>
           </div>
         </div>
 
@@ -372,7 +414,7 @@ export function TopModelForecast({
               wind={dailyWind[i] ?? 0}
               weekMin={weekMin}
               weekRange={weekRange}
-              model={model}
+              model={activeModel}
               units={units}
               isExpanded={expandedDay === i}
               onToggle={() => setExpandedDay(expandedDay === i ? -1 : i)}
