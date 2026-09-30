@@ -2,28 +2,46 @@ import { useCallback, useEffect, useState } from 'react';
 import type { GeoLocation } from '@/modelcast/lib/types';
 
 const STORAGE_KEY = 'modelcast:favorites';
-const LAST_LOCATION_KEY = 'modelcast:last-location';
 
 /**
- * Compact URL encode/decode for GeoLocation list
- * Format: id:name:lat:lon:country,id:name:lat:lon:country
+ * Compact URL encode/decode for favorite cities so bookmark links stay clean.
+ * Format: id:name:lat:lon:country:timezone:countryCode (pipe-separated)
  */
-function parseFavoritesFromUrl(): GeoLocation[] {
-  if (typeof window === 'undefined') return [];
+function serializeFavoritesToQuery(favs: GeoLocation[]): string {
+  return favs
+    .map((f) =>
+      [
+        f.id,
+        encodeURIComponent(f.name || ''),
+        f.latitude,
+        f.longitude,
+        encodeURIComponent(f.country || ''),
+        encodeURIComponent(f.timezone || 'auto'),
+        encodeURIComponent(f.country_code || ''),
+      ].join(':'),
+    )
+    .join('|');
+}
+
+function parseFavoritesFromQuery(raw: string): GeoLocation[] {
+  if (!raw.trim()) return [];
   try {
-    const params = new URLSearchParams(window.location.search);
-    const rawFavs = params.get('favs');
-    if (!rawFavs) return [];
-    return rawFavs.split(';').map((item) => {
-      const [id, name, lat, lon, country] = item.split(':');
-      return {
-        id: Number(id),
-        name: decodeURIComponent(name || ''),
-        latitude: Number(lat),
-        longitude: Number(lon),
-        country: country ? decodeURIComponent(country) : undefined,
-      };
-    }).filter((loc) => !isNaN(loc.id) && loc.name && !isNaN(loc.latitude) && !isNaN(loc.longitude));
+    return raw
+      .split('|')
+      .map((item) => {
+        const [id, name, lat, lon, country, timezone, country_code] = item.split(':');
+        if (!name || isNaN(Number(lat)) || isNaN(Number(lon))) return null;
+        return {
+          id: Number(id) || Math.floor(Math.random() * 1000000),
+          name: decodeURIComponent(name),
+          latitude: Number(lat),
+          longitude: Number(lon),
+          country: decodeURIComponent(country || ''),
+          timezone: decodeURIComponent(timezone || 'auto'),
+          country_code: decodeURIComponent(country_code || ''),
+        } as GeoLocation;
+      })
+      .filter((loc): loc is GeoLocation => loc !== null);
   } catch {
     return [];
   }
@@ -33,13 +51,10 @@ function syncFavoritesToUrl(favs: GeoLocation[]) {
   if (typeof window === 'undefined') return;
   try {
     const url = new URL(window.location.href);
-    if (favs.length === 0) {
-      url.searchParams.delete('favs');
+    if (favs.length > 0) {
+      url.searchParams.set('favs', serializeFavoritesToQuery(favs));
     } else {
-      const serialized = favs
-        .map((f) => `${f.id}:${encodeURIComponent(f.name)}:${f.latitude.toFixed(4)}:${f.longitude.toFixed(4)}:${encodeURIComponent(f.country || '')}`)
-        .join(';');
-      url.searchParams.set('favs', serialized);
+      url.searchParams.delete('favs');
     }
     window.history.replaceState(null, '', url.toString());
   } catch {
@@ -48,38 +63,64 @@ function syncFavoritesToUrl(favs: GeoLocation[]) {
 }
 
 export function useFavorites() {
-  const [favorites, setFavorites] = useState<GeoLocation[]>(() => {
-    // 1. Prioritize URL favorites (if shared/bookmarked link opened)
-    const fromUrl = parseFavoritesFromUrl();
-    if (fromUrl.length > 0) return fromUrl;
+  const [favorites, setFavorites] = useState<GeoLocation[]>([]);
 
-    // 2. Fall back to localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return JSON.parse(raw) as GeoLocation[];
-      } catch {}
-    }
-    return [];
-  });
-
-  // Keep localStorage and URL in sync whenever favorites change
+  // 1. Initialize favorites on mount: URL query params take precedence, fallback to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
-    } catch {}
-    syncFavoritesToUrl(favorites);
-  }, [favorites]);
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlFavsRaw = urlParams.get('favs');
+        if (urlFavsRaw) {
+          const fromUrl = parseFavoritesFromQuery(urlFavsRaw);
+          if (fromUrl.length > 0) {
+            setFavorites(fromUrl);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(fromUrl));
+            return;
+          }
+        }
+      }
 
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as GeoLocation[];
+        if (Array.isArray(parsed)) {
+          setFavorites(parsed);
+          syncFavoritesToUrl(parsed);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load favorites', e);
+    }
+  }, []);
+
+  // 2. Add favorite without nesting state setters (React 19 safe)
   const addFavorite = useCallback((loc: GeoLocation) => {
     setFavorites((prev) => {
       if (prev.some((f) => f.id === loc.id)) return prev;
-      return [...prev, loc];
+      const next = [...prev, loc];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {
+        console.error('Failed to persist favorites', e);
+      }
+      syncFavoritesToUrl(next);
+      return next;
     });
   }, []);
 
+  // 3. Remove favorite
   const removeFavorite = useCallback((id: number) => {
-    setFavorites((prev) => prev.filter((f) => f.id !== id));
+    setFavorites((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch (e) {
+        console.error('Failed to persist favorites', e);
+      }
+      syncFavoritesToUrl(next);
+      return next;
+    });
   }, []);
 
   const isFavorite = useCallback(
@@ -87,68 +128,47 @@ export function useFavorites() {
     [favorites],
   );
 
-  /**
-   * One-click copy link for Option 4
-   */
-  const copyShareLink = useCallback(async (): Promise<boolean> => {
-    try {
-      syncFavoritesToUrl(favorites);
-      await navigator.clipboard.writeText(window.location.href);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [favorites]);
-
-  /**
-   * Option B: Export backup file (JSON)
-   */
+  // 4. Export backup to downloaded JSON file
   const exportBackup = useCallback(() => {
     try {
       const data = {
-        favorites,
-        lastLocation: localStorage.getItem(LAST_LOCATION_KEY),
-        units: localStorage.getItem('modelcast:units'),
-        language: localStorage.getItem('modelcast:language'),
+        app: 'ModelCast',
         exportedAt: new Date().toISOString(),
+        favorites,
+        settings: {
+          units: localStorage.getItem('modelcast:units') || 'metric',
+          language: localStorage.getItem('modelcast:language') || 'en',
+          model: localStorage.getItem('modelcast:selected-model') || 'auto',
+        },
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `modelcast-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      return true;
-    } catch {
-      return false;
+    } catch (err) {
+      console.error('Export failed', err);
     }
   }, [favorites]);
 
-  /**
-   * Option B: Restore backup file (JSON)
-   */
-  const restoreBackup = useCallback((file: File): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const parsed = JSON.parse(content);
-          if (Array.isArray(parsed.favorites)) {
-            setFavorites(parsed.favorites);
-          }
-          if (parsed.units) localStorage.setItem('modelcast:units', parsed.units);
-          if (parsed.language) localStorage.setItem('modelcast:language', parsed.language);
-          if (parsed.lastLocation) localStorage.setItem(LAST_LOCATION_KEY, parsed.lastLocation);
-          resolve(true);
-        } catch {
-          resolve(false);
-        }
-      };
-      reader.onerror = () => resolve(false);
-      reader.readAsText(file);
-    });
+  // 5. Restore backup from JSON content
+  const restoreBackup = useCallback((jsonContent: string) => {
+    try {
+      const parsed = JSON.parse(jsonContent);
+      if (parsed && Array.isArray(parsed.favorites)) {
+        setFavorites(parsed.favorites);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed.favorites));
+        syncFavoritesToUrl(parsed.favorites);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }, []);
 
   return {
@@ -156,7 +176,6 @@ export function useFavorites() {
     addFavorite,
     removeFavorite,
     isFavorite,
-    copyShareLink,
     exportBackup,
     restoreBackup,
   };
