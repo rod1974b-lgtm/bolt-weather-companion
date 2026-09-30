@@ -47,14 +47,13 @@ export function Leaderboard({ votes, scope, locationName }: LeaderboardProps) {
                   : 'bg-slate-800/40'
               }`}
             >
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                i === 0 ? 'bg-amber-400 text-amber-950' :
-                i === 1 ? 'bg-slate-300 text-slate-800' :
-                i === 2 ? 'bg-orange-700 text-orange-100' :
-                'bg-slate-700 text-slate-300'
-              }`}>
-                {i + 1}
-              </div>
+              {i < 3 ? (
+                <img src={`/${i + 1}.png`} alt={`${i + 1}${i === 0 ? 'st' : i === 1 ? 'nd' : 'rd'} place medal`} className="h-10 w-10 shrink-0 object-contain" />
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-bold text-slate-300">
+                  {i + 1}
+                </div>
+              )}
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: modelColor(vote.model_id) }} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-slate-200">{vote.model_name}</p>
