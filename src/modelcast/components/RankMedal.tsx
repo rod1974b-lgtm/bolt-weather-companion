@@ -1,40 +1,29 @@
-// src/modelcast/components/RankMedal.tsx
+import medal1 from '@/assets/model-rank-medals/rank-1.png';
+import medal2 from '@/assets/model-rank-medals/rank-2.png';
+import medal3 from '@/assets/model-rank-medals/rank-3.png';
+
 interface RankMedalProps {
   rank: number;
   className?: string;
 }
 
-const MEDAL_STYLES = {
-  1: {
-    bg: 'bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600',
-    border: 'border-amber-200/90 shadow-lg shadow-amber-500/30',
-    text: 'text-amber-950',
-    icon: '🥇',
-  },
-  2: {
-    bg: 'bg-gradient-to-br from-slate-100 via-slate-200 to-slate-400',
-    border: 'border-white/80 shadow-lg shadow-slate-300/20',
-    text: 'text-slate-900',
-    icon: '🥈',
-  },
-  3: {
-    bg: 'bg-gradient-to-br from-amber-600 via-amber-700 to-amber-900',
-    border: 'border-amber-400/60 shadow-lg shadow-amber-900/30',
-    text: 'text-amber-100',
-    icon: '🥉',
-  },
-} as const;
+const MEDALS: Record<number, { src: string; alt: string }> = {
+  1: { src: medal1, alt: '1st Place Gold Medal' },
+  2: { src: medal2, alt: '2nd Place Silver Medal' },
+  3: { src: medal3, alt: '3rd Place Bronze Medal' },
+};
 
 export function RankMedal({ rank, className = 'h-8 w-8' }: RankMedalProps) {
-  const style = MEDAL_STYLES[rank as 1 | 2 | 3];
-  if (!style) return null;
+  const medal = MEDALS[rank];
+  if (!medal) return null;
 
   return (
-    <div
-      className={`flex ${className} shrink-0 items-center justify-center rounded-full border text-base leading-none select-none ${style.bg} ${style.border} ${style.text}`}
-      title={`Rank #${rank}`}
-    >
-      <span>{style.icon}</span>
-    </div>
+    <img
+      src={medal.src}
+      alt={medal.alt}
+      className={`${className} shrink-0 object-contain drop-shadow-sm select-none`}
+      loading="eager"
+      decoding="async"
+    />
   );
 }
